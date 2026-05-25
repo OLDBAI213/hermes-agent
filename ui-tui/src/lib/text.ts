@@ -3,6 +3,7 @@ import {
   LIVE_RENDER_MAX_LINES,
   THINKING_COT_MAX
 } from '../config/limits.js'
+import { FACES } from '../content/faces.js'
 import { REASONING_STATUS_WORDS, VERBS } from '../content/verbs.js'
 import type { ThinkingMode } from '../types.js'
 
@@ -123,18 +124,31 @@ const LEGACY_REASONING_STATUS_WORDS = [
   'brainstorming'
 ]
 const THINKING_CLEANUP_WORDS = [...STATUS_WORDS, ...LEGACY_REASONING_STATUS_WORDS]
-const THINKING_STATUS_RE = new RegExp(`^(?:${STATUS_WORDS.join('|')})\\.{0,3}$`, 'i')
-const THINKING_CLEANUP_RE = new RegExp(`^(?:${THINKING_CLEANUP_WORDS.join('|')})\\.{0,3}$`, 'i')
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const THINKING_STATUS_SOURCE = STATUS_WORDS.map(escapeRegex).join('|')
+const THINKING_CLEANUP_SOURCE = THINKING_CLEANUP_WORDS.map(escapeRegex).join('|')
+const THINKING_FACE_SOURCE = FACES.map(escapeRegex).join('|')
+const THINKING_STATUS_RE = new RegExp(`^(?:${THINKING_STATUS_SOURCE})\\.{0,3}$`, 'i')
+const THINKING_CLEANUP_RE = new RegExp(`^(?:${THINKING_CLEANUP_SOURCE})\\.{0,3}$`, 'i')
+const THINKING_FACE_PREFIX_RE = new RegExp(`^\\s*(?:${THINKING_FACE_SOURCE})\\s*`, 'u')
+const THINKING_FACE_ONLY_RE = new RegExp(`^(?:${THINKING_FACE_SOURCE})$`, 'u')
 const THINKING_STATUS_CHUNK_RE = new RegExp(
-  `(?:^|[^\\p{L}\\p{N}\n]+)\\s*(?:${THINKING_CLEANUP_WORDS.join('|')})\\.{0,3}\\s*`,
+  `(?:^|[^\\p{L}\\p{N}\n]+)\\s*(?:(?:${THINKING_FACE_SOURCE})\\s*)?(?:${THINKING_CLEANUP_SOURCE})\\.{0,3}\\s*`,
   'giu'
 )
+
+const stripThinkingStatusLine = (line: string) =>
+  line
+    .replace(THINKING_STATUS_CHUNK_RE, '')
+    .replace(THINKING_FACE_PREFIX_RE, '')
+    .trim()
 
 export const cleanThinkingText = (reasoning: string) =>
   reasoning
     .split('\n')
-    .map(line => line.replace(THINKING_STATUS_CHUNK_RE, '').trim())
-    .filter(line => line && !THINKING_STATUS_RE.test(line.replace(/\.\.\.$/, '').trim()))
+    .map(stripThinkingStatusLine)
+    .filter(line => line && !THINKING_FACE_ONLY_RE.test(line))
+    .filter(line => !THINKING_STATUS_RE.test(line.replace(/\.\.\.$/, '').trim()))
     .filter(line => !THINKING_CLEANUP_RE.test(line.replace(/\.\.\.$/, '').trim()))
     .join('\n')
     .replace(/([^\n])(?=\*\*[^*\n][^\n]*?\*\*)/g, '$1\n\n')

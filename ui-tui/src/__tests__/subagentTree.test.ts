@@ -154,7 +154,7 @@ describe('formatSummary with tokens + cost', () => {
         totalDuration: 30,
         totalTools: 14
       })
-    ).toBe('d2 · 3 agents · 14 tools · 30s · 10k tok · $0.42')
+    ).toBe('d2 · 3 个子任务 · 14 个工具 · 30s · 10k tokens · $0.42')
   })
 })
 
@@ -353,7 +353,7 @@ describe('formatSummary', () => {
   }
 
   it('collapses zero-valued components', () => {
-    expect(formatSummary({ ...emptyTotals, descendantCount: 1 })).toBe('d0 · 1 agent')
+    expect(formatSummary({ ...emptyTotals, descendantCount: 1 })).toBe('d0 · 1 个子任务')
   })
 
   it('emits rich summary with all pieces', () => {
@@ -366,7 +366,7 @@ describe('formatSummary', () => {
         totalDuration: 134,
         totalTools: 124
       })
-    ).toBe('d3 · 7 agents · 124 tools · 2m 14s · ⚡2')
+    ).toBe('d3 · 7 个子任务 · 124 个工具 · 2m 14s · ⚡2')
   })
 })
 

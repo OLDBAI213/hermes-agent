@@ -243,7 +243,7 @@ describe('createSlashHandler', () => {
 
     expect(rpc).toHaveBeenCalledWith('skills.reload', {})
     await vi.waitFor(() => {
-      expect(ctx.transcript.page).toHaveBeenCalledWith('42 skill(s) available', '重载 Skills')
+      expect(ctx.transcript.page).toHaveBeenCalledWith('42 skill(s) available', '重载技能')
       expect(ctx.local.setCatalog).toHaveBeenCalledWith(
         expect.objectContaining({ canon: { '/new-skill': '/new-skill' }, pairs: [['/new-skill', 'demo']] })
       )
