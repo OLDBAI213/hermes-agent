@@ -1,0 +1,11 @@
+name: asset-pack
+description: Fixture skin for TUI banner asset contracts
+colors:
+  banner_title: "#31C476"
+  banner_text: "#D9DBD6"
+banner_logo: |-
+  [#31C476]HE[/][#D9DBD6]RMES[/]
+  [#00453E]+-----+[/]
+banner_hero: |-
+  [#31C476]表x[/]
+  [#D9DBD6]+---+[/]
