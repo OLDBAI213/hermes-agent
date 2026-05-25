@@ -399,8 +399,8 @@ export const AppLayout = memo(function AppLayout({
 
   return (
     <Shell {...shellProps}>
-      <Box flexDirection="column" flexGrow={1}>
-        <Box flexDirection="row" flexGrow={1}>
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
+        <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
           {overlay.agents ? (
             <PerfPane id="agents">
               <AgentsOverlayPane />

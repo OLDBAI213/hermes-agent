@@ -482,10 +482,22 @@ export default class Ink {
   // debounce rejection warned about. Expensive React commit defers to
   // one microtask per burst: vscode fires many SIGWINCHes per panel
   // drag, each ~80ms uncoalesced = event loop visibly locks up.
-  private handleResize = () => {
+  private refreshTerminalSize(): boolean {
     const cols = this.options.stdout.columns || 80
     const rows = this.options.stdout.rows || 24
     const dimsChanged = cols !== this.terminalColumns || rows !== this.terminalRows
+
+    if (dimsChanged) {
+      this.terminalColumns = cols
+      this.terminalRows = rows
+      this.altScreenParkPatch = makeAltScreenParkPatch(this.terminalRows)
+    }
+
+    return dimsChanged
+  }
+
+  private handleResize = () => {
+    const dimsChanged = this.refreshTerminalSize()
 
     // Terminals often emit 2+ resize events for one user action
     // (window settling). Same-dimension events are usually no-ops,
@@ -494,12 +506,6 @@ export default class Ink {
     // on the physical screen — treat it as a repaint signal.
     if (!dimsChanged && !(this.altScreenActive && !this.isPaused && this.options.stdout.isTTY)) {
       return
-    }
-
-    if (dimsChanged) {
-      this.terminalColumns = cols
-      this.terminalRows = rows
-      this.altScreenParkPatch = makeAltScreenParkPatch(this.terminalRows)
     }
 
     // Pending throttled/drain work captured stale dims — cancel so
@@ -584,6 +590,7 @@ export default class Ink {
         return
       }
 
+      this.refreshTerminalSize()
       this.resetFramesForAltScreen()
       this.needsEraseBeforePaint = true
       this.render(this.currentNode!)

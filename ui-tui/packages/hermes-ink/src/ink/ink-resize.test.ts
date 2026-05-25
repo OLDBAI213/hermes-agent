@@ -1,7 +1,9 @@
 import { EventEmitter } from 'events'
-import React from 'react'
+import React, { useContext } from 'react'
 import { describe, expect, it } from 'vitest'
 
+import { AlternateScreen } from './components/AlternateScreen.js'
+import { TerminalSizeContext } from './components/TerminalSizeContext.js'
 import Text from './components/Text.js'
 import Ink from './ink.js'
 import { CURSOR_HOME, ERASE_SCREEN } from './termio/csi.js'
@@ -20,6 +22,14 @@ class FakeTty extends EventEmitter {
 }
 
 const tick = () => new Promise<void>(resolve => queueMicrotask(resolve))
+const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+const stripAnsi = (text: string) => text.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+
+function SizeProbe() {
+  const size = useContext(TerminalSizeContext)
+
+  return React.createElement(Text, null, `rows:${size?.rows ?? 0}`)
+}
 
 describe('Ink resize healing', () => {
   it('heals same-dimension alt-screen resize events with an erase before repaint', async () => {
@@ -44,6 +54,33 @@ describe('Ink resize healing', () => {
     await tick()
 
     expect(stdout.chunks.join('')).toContain(ERASE_SCREEN + CURSOR_HOME)
+
+    ink.unmount()
+  })
+
+  it('refreshes terminal size on delayed alt-screen resize settle', async () => {
+    const stdout = new FakeTty()
+    const stdin = new FakeTty()
+    const stderr = new FakeTty()
+    const ink = new Ink({
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stderr: stderr as unknown as NodeJS.WriteStream,
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream
+    })
+
+    ink.render(React.createElement(AlternateScreen, null, React.createElement(SizeProbe)))
+    ink.onRender()
+    ink.setAltScreenActive(true)
+    stdout.chunks = []
+
+    stdout.emit('resize')
+    stdout.rows = 12
+
+    await delay(220)
+
+    expect(stripAnsi(stdout.chunks.join(''))).toContain('rows:12')
 
     ink.unmount()
   })
