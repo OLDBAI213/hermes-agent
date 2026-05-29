@@ -120,6 +120,972 @@ _GATEWAY_AUTH_ERROR_RE = re.compile(
     re.IGNORECASE,
 )
 
+_FEISHU_TOOL_NAME_ZH = {
+    "todo": "待办",
+    "delegate_task": "分派任务",
+    "memory": "记忆",
+    "session_search": "搜索会话",
+    "skill_view": "查看技能",
+    "skill_manage": "管理技能",
+    "terminal": "终端",
+    "tool": "调用工具",
+    "task_analysis": "任务分析",
+    "process": "执行过程",
+    "cronjob": "定时任务",
+    "run_command": "运行命令",
+    "read_file": "读取文件",
+    "write_file": "写入文件",
+    "patch": "修改文件",
+    "search_files": "搜索文件",
+    "search_code": "搜索代码",
+    "web_search": "网页搜索",
+    "web_extract": "网页提取",
+    "send_message": "发送消息",
+    "edit_message": "更新消息",
+    "browser": "浏览器",
+    "browser_navigate": "浏览器跳转",
+    "browser_click": "浏览器点击",
+    "browser_type": "浏览器输入",
+    "browser_snapshot": "浏览器快照",
+    "browser_console": "浏览器控制台",
+    "browser_get_images": "浏览器图片",
+    "browser_vision": "浏览器视觉",
+    "browser_back": "浏览器返回",
+    "browser_press": "浏览器按键",
+    "browser_scroll": "浏览器滚动",
+    "browser_cdp": "浏览器 CDP",
+    "vision_analyze": "视觉分析",
+    "mcp_github_get_file_contents": "读取 GitHub 文件",
+    "mcp_github_create_or_update_file": "创建/更新 GitHub 文件",
+    "mcp_github_create_repository": "创建 GitHub 仓库",
+}
+
+_FEISHU_TOOL_EMOJI = {
+    "todo": "📋",
+    "delegate_task": "🧩",
+    "memory": "🧠",
+    "session_search": "🔎",
+    "skill_view": "📚",
+    "skill_manage": "📚",
+    "terminal": "💻",
+    "tool": "🔧",
+    "task_analysis": "🧩",
+    "process": "🧰",
+    "cronjob": "⏰",
+    "run_command": "💻",
+    "read_file": "📖",
+    "write_file": "✍️",
+    "patch": "🛠️",
+    "search_files": "🔎",
+    "search_code": "🔎",
+    "web_search": "🌐",
+    "web_extract": "📄",
+    "send_message": "📰",
+    "edit_message": "✏️",
+    "browser": "🌐",
+    "browser_navigate": "🌐",
+    "browser_click": "🖱️",
+    "browser_type": "⌨️",
+    "browser_snapshot": "📸",
+    "browser_console": "🖥️",
+    "browser_get_images": "🖼️",
+    "browser_vision": "👁️",
+    "browser_back": "↩️",
+    "browser_press": "⌨️",
+    "browser_scroll": "↕️",
+    "browser_cdp": "🧪",
+    "vision_analyze": "👁️",
+    "mcp_github_get_file_contents": "📄",
+    "mcp_github_create_or_update_file": "✍️",
+    "mcp_github_create_repository": "📦",
+}
+
+_FEISHU_ACTIVITY_ZH = {
+    "receiving stream response": "正在接收流式响应",
+    "waiting for provider response (streaming)": "正在等待模型流式响应",
+    "api_call_streaming": "正在接收模型响应",
+    "api": "正在调用模型",
+    "initializing": "正在初始化",
+    "tool": "正在调用工具",
+    "terminal": "正在运行终端",
+}
+
+_FEISHU_ARG_LABEL_ZH = {
+    "command": "命令",
+    "cmd": "命令",
+    "file_path": "文件",
+    "path": "路径",
+    "content": "内容",
+    "text": "内容",
+    "message": "消息",
+    "to": "发送到",
+    "platform": "平台",
+    "chat_id": "会话",
+    "target": "目标",
+    "url": "链接",
+    "urls": "链接",
+    "query": "查询",
+    "pattern": "匹配",
+    "cwd": "目录",
+    "name": "名称",
+    "title": "标题",
+    "prompt": "提示",
+    "goal": "目标",
+    "description": "描述",
+    "output": "输出",
+    "output_path": "输出文件",
+    "steps": "步骤",
+}
+
+
+def _zh_enabled_for_gateway(user_config: dict, platform_key: str) -> bool:
+    """Return whether gateway-visible platform text should prefer Chinese."""
+    display = user_config.get("display") if isinstance(user_config, dict) else {}
+    if not isinstance(display, dict):
+        return False
+
+    platform_cfg = (display.get("platforms") or {}).get(platform_key) if isinstance(display.get("platforms"), dict) else {}
+    if not isinstance(platform_cfg, dict):
+        platform_cfg = {}
+
+    values = (
+        platform_cfg.get("language"),
+        platform_cfg.get("gateway_locale"),
+        display.get("language"),
+        display.get("gateway_locale"),
+    )
+    return any(str(value or "").lower().startswith("zh") for value in values)
+
+
+def _feishu_tool_label_zh(tool_name: str) -> str:
+    if tool_name in _FEISHU_TOOL_NAME_ZH:
+        return _FEISHU_TOOL_NAME_ZH[tool_name]
+    if tool_name.startswith("mcp_"):
+        parts = tool_name.split("_", 2)
+        if len(parts) == 3:
+            server = parts[1].replace("-", " ").title()
+            action = parts[2].replace("_", " ")
+            return f"{server} {action}"
+    return tool_name
+
+
+def _feishu_tool_emoji(tool_name: str, fallback: str = "⚙️") -> str:
+    return _FEISHU_TOOL_EMOJI.get(str(tool_name or ""), fallback)
+
+
+def _feishu_preview_zh(preview: str) -> str:
+    text = str(preview or "").strip()
+    lowered = text.lower()
+    if lowered == "reading task list":
+        return "读取任务列表"
+    if lowered == "compact":
+        return "紧凑"
+    if lowered == "full":
+        return "完整"
+    if lowered == "console logs":
+        return "控制台日志"
+    match = re.fullmatch(r"planning\s+(\d+)\s+task\(s\)", lowered)
+    if match:
+        return f"规划 {match.group(1)} 个任务"
+    match = re.fullmatch(r"updating\s+(\d+)\s+task\(s\)", lowered)
+    if match:
+        return f"更新 {match.group(1)} 个任务"
+    match = re.fullmatch(r"executing\s+process\s+\((\d+)\s+steps?\)", lowered)
+    if match:
+        return f"执行过程（{match.group(1)}步）"
+    match = re.fullmatch(r"calling\s+tool:?\s*(.*)", text, flags=re.IGNORECASE)
+    if match:
+        target = match.group(1).strip()
+        return f"调用工具：{target}" if target else "调用工具"
+    match = re.fullmatch(r"task\s+analysis:?\s*(.*)", text, flags=re.IGNORECASE)
+    if match:
+        target = match.group(1).strip()
+        return f"任务分析：{target}" if target else "任务分析"
+    match = re.fullmatch(r"deep\s+study\s+of\s+(.+?)\.\s*focus\s+on:\s*(.*)", text, flags=re.IGNORECASE)
+    if match:
+        subject, focus = match.groups()
+        return f"深入研究 {subject}。重点：{focus}".rstrip()
+    return text
+
+
+def _compact_feishu_value(value: Any, *, max_len: int = 120) -> str:
+    if isinstance(value, (dict, list, tuple)):
+        text = json.dumps(value, ensure_ascii=False, default=str)
+    else:
+        text = str(value or "")
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) > max_len:
+        text = text[: max_len - 1] + "…"
+    return text
+
+
+def _format_feishu_verbose_tool_message(
+    *,
+    emoji: str,
+    tool_name: str,
+    args: dict | None = None,
+    preview: str | None = None,
+) -> str:
+    label = _feishu_tool_label_zh(tool_name)
+    if preview:
+        return f"{emoji} {label}: \"{_feishu_preview_zh(preview)}\""
+    if not args:
+        return f"{emoji} {label}…"
+
+    preferred_keys = {
+        "terminal": ("command", "cmd", "cwd"),
+        "run_command": ("command", "cmd", "cwd"),
+        "write_file": ("file_path", "path", "content"),
+        "read_file": ("file_path", "path"),
+        "patch": ("file_path", "path"),
+        "send_message": ("to", "platform", "chat_id", "content", "text", "message"),
+        "edit_message": ("message_id", "content", "text"),
+    }.get(tool_name, ())
+    keys = [key for key in preferred_keys if key in args]
+    if not keys:
+        keys = list(args.keys())[:3]
+
+    parts: list[str] = []
+    for key in keys:
+        zh_key = _FEISHU_ARG_LABEL_ZH.get(str(key), str(key))
+        value = _compact_feishu_value(args.get(key))
+        if value:
+            parts.append(f"{zh_key}: {value}")
+    if not parts:
+        return f"{emoji} {label}…"
+    return f"{emoji} {label}: " + "；".join(parts)
+
+
+def _extract_feishu_failure_detail(result_preview: Any) -> str:
+    if isinstance(result_preview, (dict, list, tuple)):
+        data = result_preview
+    else:
+        raw = str(result_preview or "").strip()
+        data = None
+        if raw.startswith(("{", "[")):
+            try:
+                data = json.loads(raw)
+            except Exception:
+                data = None
+        if data is None:
+            return raw
+
+    def _walk(value: Any) -> str:
+        if isinstance(value, dict):
+            for key in ("error", "message", "reason", "detail"):
+                item = value.get(key)
+                if item:
+                    return _compact_feishu_value(item, max_len=120)
+            for key in ("results", "items", "data"):
+                item = value.get(key)
+                found = _walk(item)
+                if found:
+                    return found
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                found = _walk(item)
+                if found:
+                    return found
+        return ""
+
+    return _walk(data)
+
+
+def _format_feishu_tool_failure_message(
+    *,
+    tool_name: str,
+    result_preview: Any = None,
+    fallback_emoji: str = "⚠️",
+) -> str:
+    label = _feishu_tool_label_zh(tool_name)
+    detail = _compact_feishu_value(_extract_feishu_failure_detail(result_preview), max_len=90)
+    detail = re.sub(
+        r"^(?:error|failed|exception)(?:\s+executing\s+tool\s+'[^']+')?\s*:?\s*",
+        "",
+        detail,
+        flags=re.IGNORECASE,
+    ).strip()
+    detail = detail.replace("idempotent_no_progress_block", "页面状态重复无进展")
+    if detail:
+        return f"{fallback_emoji} {label}失败: {detail}"
+    return f"{fallback_emoji} {label}失败"
+
+
+def _localize_feishu_guardrail_message(text: str) -> str:
+    body = str(text or "").strip()
+    status_match = re.fullmatch(r"⚠️\s*Tool guardrail halted\s+([A-Za-z0-9_:-]+):\s*([A-Za-z0-9_:-]+)", body)
+    if status_match:
+        tool_name, code = status_match.groups()
+        reason = "页面状态重复无进展" if code == "idempotent_no_progress_block" else code
+        return f"⚠️ 工具防重复已暂停 {_feishu_tool_label_zh(tool_name)}: {reason}"
+
+    final_match = re.fullmatch(
+        r"I stopped retrying\s+([A-Za-z0-9_:-]+)\s+because it hit the tool-call guardrail "
+        r"\(([A-Za-z0-9_:-]+)\) after (\d+) repeated non-progressing attempts\. "
+        r"The last tool result explains the blocker; the next step is to change strategy instead of repeating the same call\.",
+        body,
+    )
+    if final_match:
+        tool_name, code, count = final_match.groups()
+        reason = "页面状态重复无进展" if code == "idempotent_no_progress_block" else code
+        return (
+            f"我已停止重复调用 {_feishu_tool_label_zh(tool_name)}，因为连续 {count} 次没有取得新进展"
+            f"（{reason}）。上一条工具结果里有阻塞原因，下一步需要换方法，而不是继续重复同一个调用。"
+        )
+    return body
+
+
+def _localize_feishu_background_review_message(text: str) -> str:
+    body = str(text or "").strip()
+    match = re.fullmatch(r"💾\s*Self-improvement review:\s*(.+)", body)
+    if not match:
+        return body
+    summary = match.group(1).strip()
+    summary = summary.replace("Memory updated", "记忆已更新")
+    summary = summary.replace("User profile updated", "用户画像已更新")
+    summary = summary.replace("Skill updated", "技能已更新")
+    return f"💾 自我改进复盘: {summary}"
+
+
+def _localize_feishu_lifecycle_status_message(text: str) -> str:
+    """Localize backend lifecycle status bubbles before Feishu delivery."""
+    body = str(text or "").strip()
+    if not body:
+        return body
+
+    exact = {
+        "↻ Stream interrupted — using delivered content as final response": "↻ 流式响应中断，已使用已显示内容作为最终回复",
+        "↻ Empty response after tool calls — using earlier content as final answer": "↻ 工具调用后模型返回空，已使用前面内容作为最终回复",
+        "⚠️ Model returned empty after tool calls — nudging to continue": "⚠️ 工具调用后模型返回空，正在提示模型继续",
+        "⚠️ Model returning empty responses — switching to fallback provider...": "⚠️ 模型连续返回空响应，正在切换备用模型…",
+        "⚠️ Empty/malformed response — switching to fallback...": "⚠️ 模型响应为空或格式异常，正在切换备用模型…",
+        "⚠️ Rate limited — switching to fallback provider...": "⚠️ 模型请求受限，正在切换备用模型…",
+        "🔌 Detected stale connections from a previous provider issue — cleaned up automatically. Proceeding with fresh connection.": "🔌 检测到上次模型连接残留，已自动清理并使用新连接继续。",
+        "⚠️ Model produced reasoning but no visible response after all retries. Returning empty.": "⚠️ 模型多次只返回思考，没有生成可见回复，已返回空结果。",
+        "🗜️ Compacting context — summarizing earlier conversation so I can continue...": "🗜️ 正在压缩上下文，总结较早对话后继续。",
+    }
+    if body in exact:
+        return exact[body]
+
+    budget_match = re.fullmatch(
+        r"⚠️\s*Iteration budget exhausted \((\d+)/(\d+)\) — asking model to summarise",
+        body,
+    )
+    if budget_match:
+        current, total = budget_match.groups()
+        return f"⚠️ 已用完本轮迭代预算（{current}/{total}），正在请模型总结"
+
+    preflight_match = re.fullmatch(
+        r"📦\s*Preflight compression: ~([\d,]+) tokens >= ([\d,]+) threshold\. This may take a moment\.",
+        body,
+    )
+    if preflight_match:
+        current, threshold = preflight_match.groups()
+        return f"📦 上下文预压缩：约 {current} 令牌，已超过 {threshold} 阈值，可能需要一点时间。"
+
+    retry_match = re.fullmatch(r"⚠️\s*Empty response from model — retrying \((\d+)/(\d+)\)", body)
+    if retry_match:
+        current, total = retry_match.groups()
+        return f"⚠️ 模型返回空响应，正在重试（{current}/{total}）"
+
+    thinking_match = re.fullmatch(r"↻\s*Thinking-only response — prefilling to continue \((\d+)/(\d+)\)", body)
+    if thinking_match:
+        current, total = thinking_match.groups()
+        return f"↻ 只收到思考内容，正在补写可见回复（{current}/{total}）"
+
+    primary_fallback_match = re.fullmatch(r"🔄\s*Primary model failed — switching to fallback:\s*(.+?)\s+via\s+(.+)", body)
+    if primary_fallback_match:
+        model, provider = primary_fallback_match.groups()
+        return f"🔄 主模型失败，正在切换备用模型：{model}（{provider}）"
+
+    switched_match = re.fullmatch(r"↻\s*Switched to fallback:\s*(.+?)\s+\((.+)\)", body)
+    if switched_match:
+        model, provider = switched_match.groups()
+        return f"↻ 已切换备用模型：{model}（{provider}）"
+
+    invalid_retry_match = re.fullmatch(
+        r"⚠️\s*Max retries \((\d+)\) for invalid responses — trying fallback\.\.\.",
+        body,
+    )
+    if invalid_retry_match:
+        return f"⚠️ 无效响应已重试 {invalid_retry_match.group(1)} 次，正在切换备用模型…"
+
+    invalid_giveup_match = re.fullmatch(
+        r"❌\s*Max retries \((\d+)\) exceeded for invalid responses\. Giving up\.",
+        body,
+    )
+    if invalid_giveup_match:
+        return f"❌ 无效响应重试 {invalid_giveup_match.group(1)} 次仍失败，已停止。"
+
+    max_retry_match = re.fullmatch(r"⚠️\s*Max retries \((\d+)\) exhausted — trying fallback\.\.\.", body)
+    if max_retry_match:
+        return f"⚠️ 已重试 {max_retry_match.group(1)} 次，正在切换备用模型…"
+
+    payload_match = re.fullmatch(
+        r"⚠️\s*Request payload too large \(413\) — compression attempt (\d+)/(\d+)\.\.\.",
+        body,
+    )
+    if payload_match:
+        current, total = payload_match.groups()
+        return f"⚠️ 请求内容过大（413），正在压缩重试（{current}/{total}）"
+
+    context_large_match = re.fullmatch(
+        r"🗜️\s*Context too large \(~([\d,]+) tokens\) — compressing \((\d+)/(\d+)\)\.\.\.",
+        body,
+    )
+    if context_large_match:
+        tokens, current, total = context_large_match.groups()
+        return f"🗜️ 上下文过大（约 {tokens} 令牌），正在压缩（{current}/{total}）"
+
+    compressed_match = re.fullmatch(r"🗜️\s*Compressed (\d+) → (\d+) messages, retrying\.\.\.", body)
+    if compressed_match:
+        before, after = compressed_match.groups()
+        return f"🗜️ 已压缩消息：{before} → {after}，正在重试…"
+
+    reduced_match = re.fullmatch(
+        r"🗜️\s*Context reduced to ([\d,]+) tokens \(was ([\d,]+)\), retrying\.\.\.",
+        body,
+    )
+    if reduced_match:
+        after, before = reduced_match.groups()
+        return f"🗜️ 上下文已从 {before} 令牌降到 {after} 令牌，正在重试…"
+
+    non_retry_fallback_match = re.fullmatch(
+        r"⚠️\s*Non-retryable error \(HTTP (\d+)\) — trying fallback\.\.\.",
+        body,
+    )
+    if non_retry_fallback_match:
+        return f"⚠️ 模型返回不可重试错误（HTTP {non_retry_fallback_match.group(1)}），正在切换备用模型…"
+
+    non_retry_error_match = re.fullmatch(r"❌\s*Non-retryable error \(HTTP (\d+)\):\s*(.*)", body, flags=re.DOTALL)
+    if non_retry_error_match:
+        status, detail = non_retry_error_match.groups()
+        detail = detail.strip()
+        suffix = f": {detail}" if detail else ""
+        return f"❌ 模型返回不可重试错误（HTTP {status}）{suffix}"
+
+    rate_wait_match = re.fullmatch(
+        r"⏱️\s*Rate limited\. Waiting ([\d.]+)s \(attempt (\d+)/(\d+)\)\.\.\.",
+        body,
+    )
+    if rate_wait_match:
+        seconds, current, total = rate_wait_match.groups()
+        return f"⏱️ 模型限流，等待 {seconds} 秒后重试（{current}/{total}）"
+
+    retry_wait_match = re.fullmatch(
+        r"⏳\s*Retrying in ([\d.]+)s \(attempt (\d+)/(\d+)\)\.\.\.",
+        body,
+    )
+    if retry_wait_match:
+        seconds, current, total = retry_wait_match.groups()
+        return f"⏳ {seconds} 秒后重试（{current}/{total}）"
+
+    rate_failed_match = re.fullmatch(r"❌\s*Rate limited after (\d+) retries — (.*)", body, flags=re.DOTALL)
+    if rate_failed_match:
+        count, detail = rate_failed_match.groups()
+        return f"❌ 限流重试 {count} 次仍失败 — {detail.strip()}"
+
+    api_failed_match = re.fullmatch(r"❌\s*API failed after (\d+) retries — (.*)", body, flags=re.DOTALL)
+    if api_failed_match:
+        count, detail = api_failed_match.groups()
+        return f"❌ API 重试 {count} 次仍失败 — {detail.strip()}"
+
+    no_content_match = re.fullmatch(
+        r"❌\s*Model returned no content after all retries( and fallback attempts\.|\. No fallback providers configured\.)",
+        body,
+    )
+    if no_content_match:
+        suffix = "，备用模型也失败。" if "fallback attempts" in no_content_match.group(1) else "，且未配置备用模型。"
+        return f"❌ 模型多次重试后仍未返回内容{suffix}"
+
+    no_response_match = re.fullmatch(
+        r"⚠️\s*No response from provider for (\d+)s \(non-streaming, model: (.+)\)\. Aborting call\.",
+        body,
+    )
+    if no_response_match:
+        seconds, model = no_response_match.groups()
+        return f"⚠️ 模型 {model} 已 {seconds} 秒无响应，正在终止本次调用。"
+
+    reconnect_match = re.fullmatch(
+        r"⚠️\s*No response from provider for (\d+)s \(model: (.+), context: ~([\d,]+) tokens\)\. Reconnecting\.\.\.",
+        body,
+    )
+    if reconnect_match:
+        seconds, model, tokens = reconnect_match.groups()
+        return f"⚠️ 模型 {model} 已 {seconds} 秒无响应（上下文约 {tokens} 令牌），正在重连…"
+
+    malformed_stream_match = re.fullmatch(
+        r"❌\s*Provider returned malformed streaming data after (\d+) attempts\. The provider may be experiencing issues — try again in a moment\.",
+        body,
+    )
+    if malformed_stream_match:
+        return f"❌ 模型连续 {malformed_stream_match.group(1)} 次返回异常流式数据，可能是服务端临时问题，请稍后再试。"
+
+    stream_retry_match = re.fullmatch(
+        r"⚠️\s*(.+?) stream (.+?) \((.+?)\)(.*?) — reconnecting, retry (\d+)/(\d+)",
+        body,
+    )
+    if stream_retry_match:
+        provider, kind, error_name, suffix, current, total = stream_retry_match.groups()
+        suffix = suffix.strip()
+        suffix_part = f"（{suffix}）" if suffix else ""
+        return f"⚠️ {provider} 流式响应 {kind}（{error_name}）{suffix_part}，正在重连（{current}/{total}）"
+
+    return body
+
+
+def _localize_feishu_tool_progress_message(message: str) -> str:
+    """Localize Feishu tool-progress bubbles while keeping raw args intact."""
+    text = str(message or "")
+    if "\n" in text:
+        return "\n".join(_localize_feishu_tool_progress_message(line) for line in text.splitlines())
+
+    text = re.sub(
+        r"\bExecuting\s+process\s+\((\d+)\s+steps?\)",
+        lambda match: f"执行过程（{match.group(1)}步）",
+        text,
+        flags=re.IGNORECASE,
+    )
+    process_match = re.fullmatch(r"(?:.+?\s+)?执行过程（(\d+)步）", text)
+    if process_match:
+        return f"{_feishu_tool_emoji('process')} 执行过程（{process_match.group(1)}步）"
+    text = re.sub(r"\bCalling\s+tool\b", "调用工具", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bTask\s+analysis\b", "任务分析", text, flags=re.IGNORECASE)
+
+    match = re.match(r"^(.+?)\s+([A-Za-z0-9_:-]+)(?:\.\.\.|…)?(?::\s*\"?(.*?)(?:\")?)?$", text)
+    if not match:
+        return text
+
+    emoji, tool_name, preview = match.groups()
+    label = _feishu_tool_label_zh(tool_name)
+    if preview is not None:
+        preview_zh = _feishu_preview_zh(preview)
+        if tool_name == "process":
+            process_preview = re.fullmatch(r"执行过程（(\d+)步）", preview_zh)
+            if process_preview:
+                return f"{_feishu_tool_emoji('process')} 执行过程（{process_preview.group(1)}步）"
+        quoted_preview = bool(re.search(r":\s*\"", text))
+        quote_open = "\"" if quoted_preview else ""
+        quote_close = "\"" if quoted_preview and text.rstrip().endswith("\"") else ""
+        return f"{emoji} {label}: {quote_open}{preview_zh}{quote_close}"
+    return f"{emoji} {label}…"
+
+
+def _localize_feishu_activity_desc(text: str) -> str:
+    desc = str(text or "").strip()
+    completed_match = re.fullmatch(r"API call #(\d+) completed", desc, flags=re.IGNORECASE)
+    if completed_match:
+        return f"第 {completed_match.group(1)} 次模型调用完成"
+    starting_match = re.fullmatch(r"starting API call #(\d+)", desc, flags=re.IGNORECASE)
+    if starting_match:
+        return f"开始第 {starting_match.group(1)} 次模型调用"
+    return _FEISHU_ACTIVITY_ZH.get(desc.lower(), desc)
+
+
+def _format_long_running_notice(
+    *,
+    elapsed_mins: int,
+    iteration: int | None = None,
+    max_iterations: int | None = None,
+    current_tool: str | None = None,
+    activity_desc: str | None = None,
+    locale_zh: bool = False,
+) -> str:
+    if not locale_zh:
+        status_parts: list[str] = []
+        if iteration is not None and max_iterations is not None:
+            status_parts.append(f"iteration {iteration}/{max_iterations}")
+        if current_tool:
+            status_parts.append(f"running: {current_tool}")
+        elif activity_desc:
+            status_parts.append(activity_desc)
+        status_detail = f" — {', '.join(status_parts)}" if status_parts else ""
+        return f"⏳ Still working... ({elapsed_mins} min elapsed{status_detail})"
+
+    status_parts = []
+    if iteration is not None and max_iterations is not None:
+        status_parts.append(f"第 {iteration}/{max_iterations} 轮")
+    if current_tool:
+        status_parts.append(f"正在运行: {_feishu_tool_label_zh(current_tool)}")
+    elif activity_desc:
+        status_parts.append(_localize_feishu_activity_desc(activity_desc))
+    status_detail = f" — {'，'.join(status_parts)}" if status_parts else ""
+    return f"⏳ 仍在处理…（已用 {elapsed_mins} 分钟{status_detail}）"
+
+
+def _format_busy_session_status_detail(
+    *,
+    summary: dict,
+    start_ts: float,
+    now: float,
+    locale_zh: bool = False,
+) -> str:
+    status_parts: list[str] = []
+    iteration = summary.get("api_call_count", 0)
+    max_iter = summary.get("max_iterations", 0)
+    current_tool = summary.get("current_tool")
+    if start_ts:
+        elapsed_min = int((now - start_ts) / 60)
+        if elapsed_min > 0:
+            status_parts.append(
+                f"已用 {elapsed_min} 分钟" if locale_zh else f"{elapsed_min} min elapsed"
+            )
+    if max_iter:
+        status_parts.append(
+            f"第 {iteration}/{max_iter} 轮" if locale_zh else f"iteration {iteration}/{max_iter}"
+        )
+    if current_tool:
+        status_parts.append(
+            f"正在运行: {_feishu_tool_label_zh(str(current_tool))}"
+            if locale_zh
+            else f"running: {current_tool}"
+        )
+    if not status_parts:
+        return ""
+    joiner = "，" if locale_zh else ", "
+    left, right = ("（", "）") if locale_zh else (" (", ")")
+    return f"{left}{joiner.join(status_parts)}{right}"
+
+
+def _format_busy_session_ack_message(
+    *,
+    mode: str,
+    status_detail: str = "",
+    locale_zh: bool = False,
+    has_media: bool = False,
+) -> str:
+    if locale_zh:
+        if mode == "steer":
+            return (
+                f"⏩ 已插入当前运行{status_detail}。"
+                "你的消息会在下一次工具调用后送达。"
+            )
+        if mode == "queue":
+            if has_media:
+                return (
+                    f"🖼️ 已收到图片/附件，并加入下一轮队列{status_detail}。"
+                    "当前任务结束后会带着图片继续处理。"
+                )
+            return (
+                f"⏳ 已加入下一轮队列{status_detail}。"
+                "当前任务结束后会继续回复。"
+            )
+        return (
+            f"⚡ 正在打断当前任务{status_detail}。"
+            "稍后会继续回复你的消息。"
+        )
+
+    if mode == "steer":
+        return (
+            f"⏩ Steered toward current run{status_detail}. "
+            "你的消息将在下一次工具调用后发送。"
+        )
+    if mode == "queue":
+        if has_media:
+            return (
+                f"🖼️ Queued for the next turn with image/media{status_detail}. "
+                "I'll process the attachment once the current task finishes."
+            )
+        return (
+            f"⏳ Queued for the next turn{status_detail}. "
+            "I'll respond once the current task finishes."
+        )
+    return (
+        f"⚡ Interrupting current run{status_detail}. "
+        "I'll respond to your message shortly."
+    )
+
+
+def _busy_input_hint_gateway_zh(mode: str) -> str:
+    if mode == "queue":
+        return (
+            "💡 首次提示：你的消息已排到下一轮，没有打断当前任务。"
+            "发送 `/busy interrupt` 可改为立即打断，发送 `/busy status` 可查看状态。"
+            "这条提示以后不会再出现。"
+        )
+    if mode == "steer":
+        return (
+            "💡 首次提示：你的消息已插入当前运行，会在下一次工具调用后送达，"
+            "不会打断当前任务。发送 `/busy interrupt` 或 `/busy queue` 可切换模式，"
+            "发送 `/busy status` 可查看状态。这条提示以后不会再出现。"
+        )
+    return (
+        "💡 首次提示：我刚才打断了当前任务来处理你的新消息。"
+        "发送 `/busy queue` 可改为排队，发送 `/busy steer` 可插入当前运行，"
+        "发送 `/busy status` 可查看状态。这条提示以后不会再出现。"
+    )
+
+
+def _format_inactivity_timeout_lines(
+    *,
+    timeout_mins: int,
+    last_desc: str,
+    secs_ago: float,
+    current_tool: str | None,
+    iteration: int,
+    max_iterations: int,
+    locale_zh: bool = False,
+) -> list[str]:
+    if not locale_zh:
+        lines = [
+            f"⏱️ Agent inactive for {timeout_mins} min — no tool calls "
+            "or API responses."
+        ]
+        if current_tool:
+            lines.append(
+                f"The agent appears stuck on tool `{current_tool}` "
+                f"({secs_ago:.0f}s since last activity, "
+                f"iteration {iteration}/{max_iterations})."
+            )
+        else:
+            lines.append(
+                f"Last activity: {last_desc} ({secs_ago:.0f}s ago, "
+                f"iteration {iteration}/{max_iterations}). "
+                "Agent 可能正在等待 API 响应。"
+            )
+        lines.append(
+            "如需提高限制，请在 config.yaml 中设置 agent.gateway_timeout "
+            "（单位秒，0 表示无限制），然后重启网关。\n"
+            "可以重试，或使用 /reset 开始新会话。"
+        )
+        return lines
+
+    lines = [f"⏱️ Agent 已连续 {timeout_mins} 分钟没有工具调用或模型响应。"]
+    if current_tool:
+        lines.append(
+            f"看起来卡在工具 `{_feishu_tool_label_zh(str(current_tool))}` "
+            f"（距上次活动 {secs_ago:.0f} 秒，第 {iteration}/{max_iterations} 轮）。"
+        )
+    else:
+        lines.append(
+            f"上次活动: {_localize_feishu_activity_desc(last_desc)} "
+            f"（{secs_ago:.0f} 秒前，第 {iteration}/{max_iterations} 轮）。"
+            "可能是在等待模型响应。"
+        )
+    lines.append(
+        "如需提高限制，请在 config.yaml 中设置 agent.gateway_timeout "
+        "（单位秒，0 表示无限制），然后重启网关。\n"
+        "可以重试，或使用 /reset 开始新会话。"
+    )
+    return lines
+
+
+def _event_has_media(event: Any | None) -> bool:
+    return bool(getattr(event, "media_urls", None))
+
+
+def _retryable_text_from_user_content(content: Any) -> tuple[str | None, bool]:
+    """Return retryable text plus whether the message contains media/file parts."""
+    if isinstance(content, str):
+        return content, False
+
+    if isinstance(content, list):
+        text_parts: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                text_parts.append(part)
+                continue
+            if not isinstance(part, dict):
+                return None, True
+
+            part_type = str(part.get("type") or "").strip().lower()
+            if part_type in {"text", "input_text"}:
+                text = part.get("text")
+                if text:
+                    text_parts.append(str(text))
+                continue
+
+            return None, True
+
+        return "\n".join(p for p in text_parts if p).strip(), False
+
+    if content is None:
+        return None, False
+
+    return str(content), False
+
+
+def _gateway_content_preview_zh(content: Any, *, limit: int = 80) -> str:
+    has_media = False
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+                continue
+            if isinstance(part, dict):
+                part_type = str(part.get("type") or "").strip().lower()
+                if part_type in {"text", "input_text"} and part.get("text"):
+                    parts.append(str(part.get("text")))
+                else:
+                    has_media = True
+            else:
+                has_media = True
+        text = "\n".join(parts).strip()
+    else:
+        text, has_media = _retryable_text_from_user_content(content)
+
+    if has_media:
+        text = f"{text} [图片/附件]".strip() if text else "[图片/附件]"
+    if not text:
+        return ""
+    text = " ".join(str(text).split())
+    if len(text) <= limit:
+        return text
+    return text[: max(1, limit - 1)].rstrip() + "…"
+
+
+def _platform_label_zh(platform: Any) -> str:
+    value = str(getattr(platform, "value", platform) or "").strip().lower()
+    return {
+        "feishu": "飞书",
+        "lark": "飞书",
+        "telegram": "Telegram",
+        "discord": "Discord",
+        "slack": "Slack",
+        "whatsapp": "WhatsApp",
+        "wecom": "企业微信",
+        "weixin": "微信",
+        "qqbot": "QQ",
+        "local": "本地",
+    }.get(value, value or "未知")
+
+
+def _format_feishu_compact_status(
+    *,
+    session_entry: Any,
+    title: str | None,
+    db_total_tokens: int,
+    is_running: bool,
+    queue_depth: int,
+    connected_platforms: list[Any],
+    history: list[dict[str, Any]],
+) -> str:
+    label = title or str(getattr(session_entry, "session_id", "") or "")[:8] or "当前会话"
+    lines = [
+        "📊 **当前状态**",
+        f"💬 会话：{label}",
+        f"⚙️ 运行：{'是' if is_running else '否'}",
+    ]
+    if queue_depth:
+        lines.append(f"📥 队列：{queue_depth} 条待处理")
+    else:
+        lines.append("📥 队列：空")
+    lines.append(f"🧮 Token：{db_total_tokens:,}")
+    if connected_platforms:
+        platforms = "、".join(_platform_label_zh(p) for p in connected_platforms)
+        lines.append(f"🔌 连接：{platforms}")
+
+    latest_user = ""
+    for msg in reversed(history or []):
+        if isinstance(msg, dict) and msg.get("role") == "user":
+            latest_user = _gateway_content_preview_zh(msg.get("content"))
+            if latest_user:
+                break
+    if latest_user:
+        lines.append(f"🧭 最近：{latest_user}")
+
+    return "\n".join(lines)
+
+
+_GATEWAY_COMMAND_CATEGORY_ZH = {
+    "Session": "会话",
+    "Configuration": "配置",
+    "Tools & Skills": "工具与技能",
+    "Info": "信息",
+    "Exit": "退出",
+}
+
+_GATEWAY_COMMAND_DESCRIPTION_ZH = {
+    "new": "开始新会话（新的会话 ID 和历史记录）",
+    "topic": "启用或查看 Telegram 私聊主题会话",
+    "retry": "重试上一条消息（重新发送给 Agent）",
+    "undo": "撤销上一轮用户/助手对话",
+    "title": "设置当前会话标题",
+    "branch": "从当前会话创建分支，探索另一条路径",
+    "compress": "手动压缩当前对话上下文",
+    "rollback": "列出或恢复文件系统检查点",
+    "stop": "停止所有正在运行的后台进程",
+    "approve": "批准待确认的危险命令",
+    "deny": "拒绝待确认的危险命令",
+    "background": "在后台运行一条提示",
+    "agents": "显示活动 Agent 和正在运行的任务",
+    "queue": "把提示排到下一轮（不打断当前任务）",
+    "steer": "在下一次工具调用后插入消息，不打断当前任务",
+    "goal": "设置跨多轮持续推进的长期目标",
+    "subgoal": "添加或管理当前目标的额外验收条件",
+    "status": "显示当前会话状态",
+    "whoami": "显示你的斜杠命令权限（管理员/用户）",
+    "profile": "显示当前配置档名称和 Hermes 主目录",
+    "sethome": "把当前聊天设为主通道",
+    "resume": "恢复之前命名的会话",
+    "sessions": "浏览并恢复历史会话",
+    "model": "切换当前会话使用的模型",
+    "codex-runtime": "切换 OpenAI/Codex 模型的 Codex app-server 运行时",
+    "personality": "设置预定义人格",
+    "verbose": "切换工具进度显示：关闭、新工具、全部、详细",
+    "footer": "切换最终回复里的运行元数据页脚",
+    "yolo": "切换 YOLO 模式（跳过危险命令确认）",
+    "reasoning": "管理推理强度和推理显示",
+    "fast": "切换快速模式（普通/快速）",
+    "voice": "切换语音模式",
+    "bundles": "列出技能包（可用 /<name> 作为多个技能的别名）",
+    "curator": "后台技能维护（状态、运行、固定、归档、列出归档）",
+    "kanban": "多配置档协作看板（任务、链接、评论）",
+    "reload-mcp": "从配置重新加载 MCP 服务器",
+    "reload-skills": "重新扫描 Hermes skills 目录中的新增或移除技能",
+    "commands": "浏览全部命令和技能（分页）",
+    "help": "显示可用命令",
+    "restart": "等待当前任务排空后平滑重启网关",
+    "usage": "显示当前会话的 Token 用量和速率限制",
+    "insights": "显示用量洞察和分析",
+    "platform": "暂停、恢复或列出故障的网关平台",
+    "update": "将 Hermes Agent 更新到最新版本",
+    "debug": "上传调试报告（系统信息和日志摘要）并获取分享链接",
+}
+
+
+def _is_feishu_zh_gateway_event(event: Any | None) -> bool:
+    source = getattr(event, "source", None)
+    if _gateway_platform_value(getattr(source, "platform", None)) != "feishu":
+        return False
+    try:
+        return _zh_enabled_for_gateway(_load_gateway_config(), "feishu")
+    except Exception:
+        return False
+
+
+def _gateway_help_lines_for_event(event: Any | None) -> list[str]:
+    """Render gateway command help, localized for Feishu Chinese mode."""
+    if not _is_feishu_zh_gateway_event(event):
+        from hermes_cli.commands import gateway_help_lines
+
+        return gateway_help_lines()
+
+    from hermes_cli.commands import COMMAND_REGISTRY, _is_gateway_available, _resolve_config_gates
+
+    overrides = _resolve_config_gates()
+    lines: list[str] = []
+    current_category: str | None = None
+    for cmd in COMMAND_REGISTRY:
+        if not _is_gateway_available(cmd, overrides):
+            continue
+        if cmd.category != current_category:
+            current_category = cmd.category
+            lines.append("")
+            lines.append(f"**{_GATEWAY_COMMAND_CATEGORY_ZH.get(cmd.category, cmd.category)}：**")
+
+        args = f" {cmd.args_hint}" if cmd.args_hint else ""
+        alias_parts: list[str] = []
+        for alias in cmd.aliases:
+            if alias.replace("-", "_") == cmd.name.replace("-", "_") and alias != cmd.name:
+                continue
+            alias_parts.append(f"`/{alias}`")
+        alias_note = f"（别名：{', '.join(alias_parts)}）" if alias_parts else ""
+        desc = _GATEWAY_COMMAND_DESCRIPTION_ZH.get(cmd.name, cmd.description)
+        lines.append(f"`/{cmd.name}{args}` -- {desc}{alias_note}")
+    return lines
+
 _GATEWAY_RATE_LIMIT_RE = re.compile(
     r"(rate\s+limit|rate-limited|\b429\b|quota|usage\s+limit)",
     re.IGNORECASE,
@@ -305,9 +1271,17 @@ def _sanitize_gateway_final_response(platform: Any, text: str) -> str:
 
 def _prepare_gateway_status_message(platform: Any, event_type: str, message: str) -> Optional[str]:
     """Filter/sanitize agent status callbacks before platform delivery."""
+    event_type_normalized = str(event_type or "").strip().lower()
+    if event_type_normalized == "model":
+        return None
+
     text = str(message or "").strip()
     if not text:
         return None
+    if _gateway_platform_value(platform) == "feishu":
+        return _localize_feishu_lifecycle_status_message(
+            _localize_feishu_guardrail_message(text)
+        )
     if _gateway_platform_value(platform) != "telegram":
         return text
 
@@ -2260,30 +3234,27 @@ class GatewayRunner:
 
     def _telegram_topic_root_lobby_message(self) -> str:
         return (
-            "This main chat is reserved for system commands.\n\n"
-            "To start a new Hermes chat, open the All Messages topic at the top "
-            "of this bot interface and send any message there. Telegram will "
-            "create a new topic for that message; each topic works as an "
-            "independent Hermes session."
+            "这个主聊天只用于系统命令。\n\n"
+            "要开始新的 Hermes 对话，请打开机器人顶部的 All Messages topic，"
+            "并在那里发送任意消息。Telegram 会为这条消息创建一个新 topic；"
+            "每个 topic 都是独立的 Hermes 会话。"
         )
 
     def _telegram_topic_root_new_message(self) -> str:
         return (
-            "To start a new parallel Hermes chat, open the All Messages topic "
-            "at the top of this bot interface and send any message there. "
-            "Telegram will create a new topic for it.\n\n"
-            "Each topic is an independent Hermes session. Use /new inside an "
-            "existing topic only if you want to replace that topic's current session."
+            "要开始新的并行 Hermes 对话，请打开机器人顶部的 All Messages topic，"
+            "并在那里发送任意消息。Telegram 会为它创建一个新 topic。\n\n"
+            "每个 topic 都是独立的 Hermes 会话。只有在你想替换当前 topic 的会话时，"
+            "才在已有 topic 里使用 /new。"
         )
 
     def _telegram_topic_new_header(self, source: SessionSource) -> Optional[str]:
         if not self._is_telegram_topic_lane(source):
             return None
         return (
-            "Started a new Hermes session in this topic.\n\n"
-            "Tip: for parallel work, open All Messages and send a message there "
-            "to create a separate topic instead of using /new here. /new replaces "
-            "the session attached to the current topic."
+            "已在这个 topic 中开启新的 Hermes 会话。\n\n"
+            "提示：如果是并行处理，请打开 All Messages 并在那里发送消息，"
+            "创建单独的 topic；不要在这里使用 /new。/new 会替换当前 topic 绑定的会话。"
         )
 
     def _record_telegram_topic_binding(
@@ -8003,7 +8974,7 @@ class GatewayRunner:
         # happens after sender-prefix so the prefix only applies to the
         # trigger message, not the backfill block.
         if getattr(event, "channel_context", None):
-            message_text = f"{event.channel_context}\n\n[New message]\n{message_text}"
+            message_text = f"{event.channel_context}\n\n[新消息]\n{message_text}"
 
         # Declare at outer scope so the audio-file-paths handling block below
         # remains safe when ``event.media_urls`` is empty (no inner block runs).
@@ -8060,6 +9031,7 @@ class GatewayRunner:
                     "No STT provider",
                     "STT is disabled",
                     "can't listen",
+                    "没有配置语音转文字服务",
                     "VOICE_TOOLS_OPENAI_KEY",
                 )
                 if any(marker in message_text for marker in _stt_fail_markers):
@@ -8068,16 +9040,15 @@ class GatewayRunner:
                     if _stt_adapter:
                         try:
                             _stt_msg = (
-                                "🎤 I received your voice message but can't transcribe it — "
-                                "no speech-to-text provider is configured.\n\n"
-                                "To enable voice: install faster-whisper "
-                                "(`uv pip install faster-whisper` in the Hermes venv; "
-                                "`pip install faster-whisper` also works if pip is on PATH) "
-                                "and set `stt.enabled: true` in config.yaml, "
-                                "then /restart the gateway."
+                                "🎤 我收到你的语音消息了，但当前还不能转写："
+                                "没有配置语音转文字服务。\n\n"
+                                "要启用语音：在 Hermes venv 里安装 faster-whisper "
+                                "（`pip install faster-whisper`），"
+                                "并在 config.yaml 里设置 `stt.enabled: true`，"
+                                "然后重启网关。"
                             )
                             if self._has_setup_skill():
-                                _stt_msg += "\n\nFor full setup instructions, type: `/skill hermes-agent-setup`"
+                                _stt_msg += "\n\n完整配置说明可输入：`/skill hermes-agent-setup`"
                             await _stt_adapter.send(
                                 source.chat_id,
                                 _stt_msg,
@@ -8095,9 +9066,9 @@ class GatewayRunner:
                 _display = re.sub(r'[^\w.\- ]', '_', _display)
                 _agent_path = _to_agent_path(_apath)
                 _note = (
-                    f"[The user sent an audio file attachment: '{_display}'. "
-                    f"It is saved at: {_agent_path}. "
-                    f"Ask the user what they'd like you to do with it, or pass the path to a transcription or media tool.]"
+                    f"[用户发送了一个音频文件附件：'{_display}'。"
+                    f"文件已保存到：{_agent_path}。"
+                    "请询问用户想如何处理它，或将该路径传给转写/媒体工具。]"
                 )
                 message_text = f"{_note}\n\n{message_text}"
 
@@ -8131,15 +9102,14 @@ class GatewayRunner:
 
                 if mtype.startswith("text/"):
                     context_note = (
-                        f"[The user sent a text document: '{display_name}'. "
-                        f"Its content has been included below. "
-                        f"The file is also saved at: {agent_path}]"
+                        f"[用户发送了一个文本文档：'{display_name}'。"
+                        f"文件内容已包含在下方，文件也已保存到：{agent_path}]"
                     )
                 else:
                     context_note = (
-                        f"[The user sent a document: '{display_name}'. "
-                        f"The file is saved at: {agent_path}. "
-                        f"Ask the user what they'd like you to do with it.]"
+                        f"[用户发送了一个文档：'{display_name}'。"
+                        f"文件已保存到：{agent_path}。"
+                        "请询问用户想如何处理它。]"
                     )
                 message_text = f"{context_note}\n\n{message_text}"
 
@@ -8151,7 +9121,7 @@ class GatewayRunner:
             # multiple times, and without an explicit pointer the agent has to
             # guess (or answer for both subjects). Token overhead is minimal.
             reply_snippet = event.reply_to_text[:500]
-            message_text = f'[Replying to: "{reply_snippet}"]\n\n{message_text}'
+            message_text = f'[正在回复这条消息："{reply_snippet}"]\n\n{message_text}'
 
         if "@" in message_text:
             try:
@@ -8187,7 +9157,7 @@ class GatewayRunner:
                     if _adapter:
                         await _adapter.send(
                             source.chat_id,
-                            "\n".join(_ctx_result.warnings) or "Context injection refused.",
+                            "\n".join(_ctx_result.warnings) or "上下文引用已拒绝。",
                         )
                     return None
                 if _ctx_result.expanded:
@@ -9821,6 +10791,26 @@ class GatewayRunner:
             t("gateway.status.platforms", platforms=', '.join(connected_platforms)),
         ])
 
+        is_feishu_zh = (
+            bool(source)
+            and source.platform == Platform.FEISHU
+            and _zh_enabled_for_gateway(_load_gateway_config(), "feishu")
+        )
+        if is_feishu_zh:
+            try:
+                history = self.session_store.load_transcript(session_entry.session_id)
+            except Exception:
+                history = []
+            return _format_feishu_compact_status(
+                session_entry=session_entry,
+                title=title,
+                db_total_tokens=db_total_tokens,
+                is_running=is_running,
+                queue_depth=queue_depth,
+                connected_platforms=connected_platforms,
+                history=history,
+            )
+
         # Session recap — what was this session ABOUT? Pure local compute,
         # no LLM call, no prompt-cache impact. Useful when juggling multiple
         # gateway sessions and you want a one-glance reminder of where this
@@ -11262,17 +12252,17 @@ class GatewayRunner:
         """Join the user's current Discord voice channel."""
         adapter = self.adapters.get(event.source.platform)
         if not hasattr(adapter, "join_voice_channel"):
-            return "Voice channels are not supported on this platform."
+            return "当前平台不支持语音频道。"
 
         guild_id = self._get_guild_id(event)
         if not guild_id:
-            return "This command only works in a Discord server."
+            return "这个命令只能在 Discord 服务器中使用。"
 
         voice_channel = await adapter.get_user_voice_channel(
             guild_id, event.source.user_id
         )
         if not voice_channel:
-            return "You need to be in a voice channel first."
+            return "你需要先进入一个语音频道。"
 
         # Wire callbacks BEFORE join so voice input arriving immediately
         # after connection is not lost.
@@ -11289,10 +12279,10 @@ class GatewayRunner:
             err_lower = str(e).lower()
             if "pynacl" in err_lower or "nacl" in err_lower or "davey" in err_lower:
                 return (
-                    "Voice dependencies are missing (PyNaCl / davey). "
-                    f"Install with: `{sys.executable} -m pip install PyNaCl`"
+                    "缺少语音依赖（PyNaCl / davey）。"
+                    f"请安装：`{sys.executable} -m pip install PyNaCl`"
                 )
-            return f"Failed to join voice channel: {e}"
+            return f"加入语音频道失败：{e}"
 
         if success:
             adapter._voice_text_channels[guild_id] = int(event.source.chat_id)
@@ -11302,12 +12292,12 @@ class GatewayRunner:
             self._save_voice_modes()
             self._set_adapter_auto_tts_enabled(adapter, event.source.chat_id, enabled=True)
             return (
-                f"Joined voice channel **{voice_channel.name}**.\n"
-                f"I'll speak my replies and listen to you. Use /voice leave to disconnect."
+                f"已加入语音频道 **{voice_channel.name}**。\n"
+                f"我会朗读回复并收听你的语音。使用 /voice leave 断开连接。"
             )
         # Join failed — clear callback
         adapter._voice_input_callback = None
-        return "Failed to join voice channel. Check bot permissions (Connect + Speak)."
+        return "加入语音频道失败。请检查机器人权限（Connect + Speak）。"
 
     async def _handle_voice_channel_leave(self, event: MessageEvent) -> str:
         """Leave the Discord voice channel."""
@@ -11315,10 +12305,10 @@ class GatewayRunner:
         guild_id = self._get_guild_id(event)
 
         if not guild_id or not hasattr(adapter, "leave_voice_channel"):
-            return "Not in a voice channel."
+            return "当前不在语音频道中。"
 
         if not hasattr(adapter, "is_in_voice_channel") or not adapter.is_in_voice_channel(guild_id):
-            return "Not in a voice channel."
+            return "当前不在语音频道中。"
 
         try:
             await adapter.leave_voice_channel(guild_id)
@@ -11330,7 +12320,7 @@ class GatewayRunner:
         self._set_adapter_auto_tts_disabled(adapter, event.source.chat_id, disabled=True)
         if hasattr(adapter, "_voice_input_callback"):
             adapter._voice_input_callback = None
-        return "Left voice channel."
+        return "已离开语音频道。"
 
     def _handle_voice_timeout_cleanup(self, chat_id: str) -> None:
         """Called by the adapter when a voice channel times out.
@@ -12699,24 +13689,22 @@ class GatewayRunner:
 
     def _telegram_topic_help_text(self) -> str:
         return (
-            "/topic — enable multi-session DM mode (one bot, many parallel chats)\n"
+            "/topic — 启用 Telegram 私聊多会话模式（一个 bot，多个并行对话）\n"
             "\n"
-            "Usage:\n"
-            "  /topic             Enable topic mode, or show status if already on\n"
-            "  /topic help        Show this message\n"
-            "  /topic off         Disable topic mode and clear topic bindings\n"
-            "  /topic <id>        Inside a topic: restore a previous session by ID\n"
+            "用法：\n"
+            "  /topic             启用 topic 模式；已启用时显示状态\n"
+            "  /topic help        显示这段说明\n"
+            "  /topic off         关闭 topic 模式并清除 topic 绑定\n"
+            "  /topic <id>        在 topic 内按 ID 恢复旧会话\n"
             "\n"
-            "How it works:\n"
-            "1. Run /topic once in this DM — Hermes checks BotFather Threads\n"
-            "   Settings are enabled and flips on multi-session mode.\n"
-            "2. Tap All Messages at the top of the bot and send any message.\n"
-            "   Telegram creates a new topic for that message; each topic is\n"
-            "   an independent Hermes session (fresh history, fresh context).\n"
-            "3. The root DM becomes a system lobby — send /topic, /status,\n"
-            "   /help, /usage there. Normal prompts go in a topic.\n"
-            "4. /new inside a topic resets just that topic's session.\n"
-            "5. /topic <id> inside a topic restores an old session into it."
+            "工作方式：\n"
+            "1. 在这个私聊里运行一次 /topic，Hermes 会检查 BotFather 的 Threads Settings 是否开启，"
+            "然后启用多会话模式。\n"
+            "2. 点击机器人顶部的 All Messages 并发送任意消息。Telegram 会为这条消息创建新 topic；"
+            "每个 topic 都是独立 Hermes 会话（独立历史、独立上下文）。\n"
+            "3. 根私聊会变成系统大厅，只放 /topic、/status、/help、/usage。普通问题请发到 topic。\n"
+            "4. 在某个 topic 里使用 /new，只会重置那个 topic 的会话。\n"
+            "5. 在某个 topic 里使用 /topic <id>，会把旧会话恢复到这个 topic。"
         )
 
     def _disable_telegram_topic_mode_for_chat(self, source: SessionSource) -> str:
@@ -12726,7 +13714,7 @@ class GatewayRunner:
             return format_session_db_unavailable(prefix=t("gateway.shared.session_db_unavailable_prefix"))
         chat_id = str(source.chat_id or "")
         if not chat_id:
-            return "Could not determine chat ID."
+            return "无法确定聊天 ID。"
         # No-op if never enabled.
         try:
             currently_enabled = self._session_db.is_telegram_topic_mode_enabled(
@@ -12736,12 +13724,12 @@ class GatewayRunner:
         except Exception:
             currently_enabled = False
         if not currently_enabled:
-            return "Multi-session topic mode is not currently enabled for this chat."
+            return "这个聊天当前没有启用多会话 topic 模式。"
         try:
             self._session_db.disable_telegram_topic_mode(chat_id=chat_id)
         except Exception as exc:
             logger.exception("Failed to disable Telegram topic mode")
-            return f"Failed to disable topic mode: {exc}"
+            return f"关闭 topic 模式失败：{exc}"
         # Reset per-chat debounce state so the user doesn't see a stale
         # cooldown on the next activation.
         for attr in ("_telegram_lobby_reminder_ts", "_telegram_capability_hint_ts"):
@@ -12749,10 +13737,9 @@ class GatewayRunner:
             if isinstance(store, dict):
                 store.pop(chat_id, None)
         return (
-            "Multi-session topic mode is now OFF for this chat.\n\n"
-            "Existing topics in Telegram aren't removed — they'll just stop "
-            "being gated as independent sessions. The root DM works as a "
-            "normal Hermes chat again. Run /topic to re-enable later."
+            "这个聊天的多会话 topic 模式已关闭。\n\n"
+            "Telegram 里已有的 topics 不会被删除；它们只是不会再被当作独立会话入口。"
+            "根私聊会恢复为普通 Hermes 聊天。以后可再次运行 /topic 启用。"
         )
 
     async def _handle_topic_command(self, event: MessageEvent, args: str = "") -> str:
@@ -12846,11 +13833,10 @@ class GatewayRunner:
 
     def _telegram_topic_root_status_message(self, source: SessionSource) -> str:
         lines = [
-            "Telegram multi-session topics are enabled.",
+            "Telegram 多会话 topics 已启用。",
             "",
-            "To create a new Hermes chat, open All Messages at the top of this "
-            "bot interface and send any message there. Telegram will create a "
-            "new topic for it.",
+            "要创建新的 Hermes 对话，请打开机器人顶部的 All Messages，"
+            "并在那里发送任意消息。Telegram 会为它创建一个新 topic。",
             "",
         ]
         try:
@@ -12864,10 +13850,10 @@ class GatewayRunner:
             sessions = []
 
         if sessions:
-            lines.append("Previous unlinked sessions:")
+            lines.append("可恢复的未绑定旧会话：")
             for session in sessions:
                 session_id = str(session.get("id") or "")
-                title = str(session.get("title") or "Untitled session")
+                title = str(session.get("title") or "未命名会话")
                 preview = str(session.get("preview") or "").strip()
                 line = f"- {title} — `{session_id}`"
                 if preview:
@@ -12875,18 +13861,18 @@ class GatewayRunner:
                 lines.append(line)
             lines.extend([
                 "",
-                "To restore one:",
-                "1. Create or open a topic. To create a new one, open All Messages and send any message there.",
-                "2. Send /topic <session-id> inside that topic.",
-                f"Example: Send /topic {sessions[0].get('id')} inside a topic.",
+                "恢复方法：",
+                "1. 创建或打开一个 topic。要创建新的 topic，请打开 All Messages 并在那里发送任意消息。",
+                "2. 在那个 topic 内发送 /topic <session-id>。",
+                f"示例：在 topic 内发送 /topic {sessions[0].get('id')}。",
             ])
         else:
             lines.extend([
-                "No previous unlinked Telegram sessions found.",
+                "没有找到可恢复的未绑定旧会话。",
                 "",
-                "To restore a previous session later:",
-                "1. Create or open a topic. To create a new one, open All Messages and send any message there.",
-                "2. Send /topic <session-id> inside that topic.",
+                "以后要恢复旧会话：",
+                "1. 创建或打开一个 topic。要创建新的 topic，请打开 All Messages 并在那里发送任意消息。",
+                "2. 在那个 topic 内发送 /topic <session-id>。",
             ])
         return "\n".join(lines)
 
@@ -12895,15 +13881,15 @@ class GatewayRunner:
         source = event.source
         session_id = self._session_db.resolve_session_id(raw_session_id.strip())
         if not session_id:
-            return f"Session not found: {raw_session_id.strip()}"
+            return f"未找到会话：{raw_session_id.strip()}"
 
         session = self._session_db.get_session(session_id)
         if not session:
-            return f"Session not found: {raw_session_id.strip()}"
+            return f"未找到会话：{raw_session_id.strip()}"
         if str(session.get("source") or "") != "telegram":
-            return "That session is not a Telegram session and cannot be restored into this topic."
+            return "该会话不是 Telegram 会话，不能恢复到这个 topic。"
         if str(session.get("user_id") or "") != str(source.user_id):
-            return "That session does not belong to this Telegram user."
+            return "该会话不属于当前 Telegram 用户。"
 
         linked = self._session_db.is_telegram_session_linked_to_topic(session_id=session_id)
         current_binding = self._session_db.get_telegram_topic_binding(
@@ -12912,7 +13898,7 @@ class GatewayRunner:
         )
         if linked:
             if not current_binding or current_binding.get("session_id") != session_id:
-                return "That session is already linked to another Telegram topic."
+                return "该会话已经绑定到另一个 Telegram topic。"
 
         session_key = self._session_key_for_source(source)
         try:
@@ -12926,7 +13912,7 @@ class GatewayRunner:
             )
         except ValueError as exc:
             if "already linked" in str(exc):
-                return "That session is already linked to another Telegram topic."
+                return "该会话已经绑定到另一个 Telegram topic。"
             raise
 
         title = self._session_db.get_session_title(session_id) or session_id
@@ -12939,9 +13925,9 @@ class GatewayRunner:
         except Exception:
             last_assistant = None
 
-        response = f"Session restored: {title}"
+        response = f"会话已恢复：{title}"
         if last_assistant:
-            response += f"\n\nLast Hermes message:\n{last_assistant}"
+            response += f"\n\n上一条 Hermes 回复：\n{last_assistant}"
         return response
 
     async def _handle_title_command(self, event: MessageEvent) -> str:
@@ -13024,6 +14010,15 @@ class GatewayRunner:
                 titled = _list_titled_sessions()
                 if not titled:
                     return t("gateway.resume.no_named_sessions")
+                if source.platform == Platform.FEISHU:
+                    lines = ["📋 可恢复会话"]
+                    for idx, s in enumerate(titled[:8], 1):
+                        title = str(s.get("title") or "").strip()
+                        preview = str(s.get("preview", "") or "").strip()[:28]
+                        suffix = f" — {preview}" if preview else ""
+                        lines.append(f"{idx}. {title}{suffix}")
+                    lines.append("发送 /resume 标题 恢复")
+                    return "\n".join(lines)
                 lines = [t("gateway.resume.list_header")]
                 for idx, s in enumerate(titled[:10], start=1):
                     title = s["title"]
@@ -14718,9 +15713,8 @@ class GatewayRunner:
         from agent.memory_manager import sanitize_context
 
         analysis_prompt = (
-            "Describe everything visible in this image in thorough detail. "
-            "Include any text, code, data, objects, people, layout, colors, "
-            "and any other notable visual information."
+            "请用中文详细描述这张图片里能看到的所有内容。"
+            "包括文字、代码、数据、对象、人物、布局、颜色，以及其他重要视觉信息。"
         )
 
         enriched_parts = []
@@ -14736,22 +15730,19 @@ class GatewayRunner:
                     description = result.get("analysis", "")
                     description = sanitize_context(description)
                     enriched_parts.append(
-                        f"[The user sent an image~ Here's what I can see:\n{description}]\n"
-                        f"[If you need a closer look, use vision_analyze with "
-                        f"image_url: {path} ~]"
+                        f"[用户发送了一张图片，已自动识别到以下内容：\n{description}]\n"
+                        f"[如需进一步查看细节，可使用 视觉分析 工具，图片路径：{path}]"
                     )
                 else:
                     enriched_parts.append(
-                        "[The user sent an image but I couldn't quite see it "
-                        "this time (>_<) You can try looking at it yourself "
-                        f"with vision_analyze using image_url: {path}]"
+                        "[用户发送了一张图片，但本次自动识别失败。"
+                        f"如需继续分析，可使用 视觉分析 工具，图片路径：{path}]"
                     )
             except Exception as e:
                 logger.error("Vision auto-analysis error: %s", e)
                 enriched_parts.append(
-                    f"[The user sent an image but something went wrong when I "
-                    f"tried to look at it~ You can try examining it yourself "
-                    f"with vision_analyze using image_url: {path}]"
+                    "[用户发送了一张图片，但自动识别过程出错。"
+                    f"如需继续分析，可使用 视觉分析 工具，图片路径：{path}]"
                 )
 
         # Combine: vision descriptions first, then the user's original text
@@ -14785,15 +15776,18 @@ class GatewayRunner:
                 duration_str = await _probe_audio_duration(abs_path)
                 if duration_str:
                     notes.append(
-                        f"[The user sent a voice message: {abs_path} (duration: {duration_str})]"
+                        f"[用户发送了一条语音消息：{abs_path}（时长：{duration_str}）]"
                     )
                 else:
-                    notes.append(f"[The user sent a voice message: {abs_path}]")
+                    notes.append(f"[用户发送了一条语音消息：{abs_path}]")
             if not notes:
                 return user_text
             prefix = "\n\n".join(notes)
-            _placeholder = "(The user sent a message with no text content)"
-            if user_text and user_text.strip() == _placeholder:
+            _empty_content_placeholders = {
+                "(The user sent a message with no text content)",
+                "（用户发送了一条没有文本内容的消息）",
+            }
+            if user_text and user_text.strip() in _empty_content_placeholders:
                 return prefix
             if user_text:
                 return f"{prefix}\n\n{user_text}"
@@ -14809,8 +15803,7 @@ class GatewayRunner:
                 if result["success"]:
                     transcript = result["transcript"]
                     enriched_parts.append(
-                        f'[The user sent a voice message~ '
-                        f'Here\'s what they said: "{transcript}"]'
+                        f'[用户发送了一条语音消息，转写内容："{transcript}"]'
                     )
                 else:
                     error = result.get("error", "unknown error")
@@ -14819,37 +15812,34 @@ class GatewayRunner:
                         or error.startswith("Neither VOICE_TOOLS_OPENAI_KEY nor OPENAI_API_KEY is set")
                     ):
                         _no_stt_note = (
-                            "[The user sent a voice message but I can't listen "
-                            "to it right now — no STT provider is configured. "
-                            "A direct message has already been sent to the user "
-                            "with setup instructions."
+                            "[用户发送了一条语音消息，但当前没有配置语音转文字服务，暂时无法收听。"
+                            "系统已经向用户发送了配置说明。"
                         )
                         if self._has_setup_skill():
                             _no_stt_note += (
-                                " You have a skill called hermes-agent-setup "
-                                "that can help users configure Hermes features "
-                                "including voice, tools, and more."
+                                " 可使用 hermes-agent-setup 技能协助用户配置 Hermes 的语音、工具等功能。"
                             )
                         _no_stt_note += "]"
                         enriched_parts.append(_no_stt_note)
                     else:
                         enriched_parts.append(
-                            "[The user sent a voice message but I had trouble "
-                            f"transcribing it~ ({error})]"
+                            f"[用户发送了一条语音消息，但转写失败：{error}]"
                         )
             except Exception as e:
                 logger.error("Transcription error: %s", e)
                 enriched_parts.append(
-                    "[The user sent a voice message but something went wrong "
-                    "when I tried to listen to it~ Let them know!]"
+                    "[用户发送了一条语音消息，但收听/转写过程出错。请告知用户当前无法处理这条语音。]"
                 )
 
         if enriched_parts:
             prefix = "\n\n".join(enriched_parts)
             # Strip the empty-content placeholder from the Discord adapter
             # when we successfully transcribed the audio — it's redundant.
-            _placeholder = "(The user sent a message with no text content)"
-            if user_text and user_text.strip() == _placeholder:
+            _empty_content_placeholders = {
+                "(The user sent a message with no text content)",
+                "（用户发送了一条没有文本内容的消息）",
+            }
+            if user_text and user_text.strip() in _empty_content_placeholders:
                 return prefix
             if user_text:
                 return f"{prefix}\n\n{user_text}"
