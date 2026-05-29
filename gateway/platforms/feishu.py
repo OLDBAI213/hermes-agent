@@ -761,6 +761,10 @@ def _parse_inline_markdown_post_elements(text: str) -> List[Dict[str, Any]]:
         elements.append(_text_post_element(text[pos:]))
     return elements or [_text_post_element("")]
 
+
+def _build_markdown_post_rows(content: str) -> List[List[Dict[str, str]]]:
+    """Build Feishu post rows while isolating fenced code blocks.
+
     Feishu's `md` renderer can swallow trailing content when a fenced code block
     appears inside one large markdown element. Split the reply at real fence
     lines so prose before/after the code block remains visible while code stays
