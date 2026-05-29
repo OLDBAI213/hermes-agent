@@ -459,10 +459,22 @@ def _to_boolean(value: Any) -> bool:
     return value is True or value == 1 or value == "true"
 
 
-def _is_style_enabled(style: Dict[str, Any] | None, key: str) -> bool:
+_FEISHU_POST_STYLE_KEYS = {
+    "bold": "bold",
+    "italic": "italic",
+    "underline": "underline",
+    "strikethrough": "lineThrough",
+    "lineThrough": "lineThrough",
+}
+
+
+def _is_style_enabled(style: Dict[str, Any] | Sequence[Any] | None, key: str) -> bool:
     if not style:
         return False
-    return _to_boolean(style.get(key))
+    api_key = _FEISHU_POST_STYLE_KEYS.get(key, key)
+    if isinstance(style, dict):
+        return _to_boolean(style.get(key)) or _to_boolean(style.get(api_key))
+    return key in style or api_key in style
 
 
 def _wrap_inline_code(text: str) -> str:
@@ -479,21 +491,21 @@ def _sanitize_fence_language(language: str) -> str:
 def _render_text_element(element: Dict[str, Any]) -> str:
     text = str(element.get("text", "") or "")
     style = element.get("style")
-    style_dict = style if isinstance(style, dict) else None
+    style_spec = style if isinstance(style, (dict, list, tuple, set)) else None
 
-    if _is_style_enabled(style_dict, "code"):
+    if _is_style_enabled(style_spec, "code"):
         return _wrap_inline_code(text)
 
     rendered = _escape_markdown_text(text)
     if not rendered:
         return ""
-    if _is_style_enabled(style_dict, "bold"):
+    if _is_style_enabled(style_spec, "bold"):
         rendered = f"**{rendered}**"
-    if _is_style_enabled(style_dict, "italic"):
+    if _is_style_enabled(style_spec, "italic"):
         rendered = f"*{rendered}*"
-    if _is_style_enabled(style_dict, "underline"):
+    if _is_style_enabled(style_spec, "underline"):
         rendered = f"<u>{rendered}</u>"
-    if _is_style_enabled(style_dict, "strikethrough"):
+    if _is_style_enabled(style_spec, "strikethrough"):
         rendered = f"~~{rendered}~~"
     return rendered
 
@@ -558,8 +570,196 @@ def _build_markdown_post_payload(content: str) -> str:
     )
 
 
-def _build_markdown_post_rows(content: str) -> List[List[Dict[str, str]]]:
-    """Build Feishu post rows while isolating fenced code blocks.
+_FEISHU_INLINE_VALUE_LABELS = {
+    "内容",
+    "目录",
+    "文件",
+    "文件夹",
+    "文件类型",
+    "路径",
+    "范围",
+    "项目",
+    "命令",
+    "工具",
+    "端口",
+    "服务",
+    "进程",
+}
+
+
+def _looks_like_feishu_section_heading(line: str) -> bool:
+    text = line.strip()
+    if not text:
+        return False
+    if text.startswith(("-", "*", "1.", "2.", "3.", "4.", "5.")):
+        return False
+    if re.search(r"[:：。；;,.，]$", text):
+        return False
+    if re.search(r"[:：]", text):
+        return False
+    if len(text) > 24:
+        return False
+    return True
+
+
+def _polish_feishu_structured_text(content: str) -> str:
+    """Keep short structured reports readable in Feishu desktop and mobile.
+
+    Models sometimes emit field names and values on separate lines:
+
+    排除类型
+    目录
+    D:\\ E:\\
+
+    Feishu renders that as scattered fragments.  Merge only obvious
+    label/value pairs outside code fences so order and meaning stay intact.
+    """
+    if not content:
+        return content
+
+    lines = content.replace("\r\n", "\n").split("\n")
+    result: list[str] = []
+    i = 0
+    in_code_block = False
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        if _MARKDOWN_FENCE_OPEN_RE.match(stripped) or _MARKDOWN_FENCE_CLOSE_RE.match(stripped):
+            in_code_block = not in_code_block
+            result.append(line)
+            i += 1
+            continue
+        if in_code_block:
+            result.append(line)
+            i += 1
+            continue
+
+        if (
+            stripped in _FEISHU_INLINE_VALUE_LABELS
+            and i + 1 < len(lines)
+            and lines[i + 1].strip()
+            and lines[i + 1].strip() not in _FEISHU_INLINE_VALUE_LABELS
+        ):
+            result.append(f"- {stripped}: {lines[i + 1].strip()}")
+            i += 2
+            continue
+
+        if (
+            _looks_like_feishu_section_heading(stripped)
+            and i + 1 < len(lines)
+            and lines[i + 1].strip() in _FEISHU_INLINE_VALUE_LABELS
+        ):
+            result.append(f"{stripped}:")
+            i += 1
+            continue
+
+        result.append(line)
+        i += 1
+
+    return "\n".join(result)
+
+
+def _build_markdown_card_payload(content: str) -> str:
+    """Build a Feishu interactive card for richer assistant responses.
+
+    Feishu post messages render basic markdown, but cards give us a more
+    inspectable container and a dedicated body block. Keep the card deliberately
+    simple so it stays compatible across Feishu/Lark clients.
+    """
+    return json.dumps(
+        {
+            "config": {
+                "wide_screen_mode": True,
+                "enable_forward": True,
+            },
+            "header": {
+                "template": "blue",
+                "title": {"tag": "plain_text", "content": "Hermes · 飞书"},
+            },
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": content or " ",
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+
+def _build_runtime_footer_card_payload(content: str) -> str:
+    """Build a compact Feishu card for runtime metadata."""
+    return json.dumps(
+        {
+            "config": {
+                "wide_screen_mode": True,
+                "enable_forward": False,
+            },
+            "header": {
+                "template": "green",
+                "title": {"tag": "plain_text", "content": "📌 运行状态"},
+            },
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": content or " ",
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+
+def _text_post_element(text: str, **style: bool) -> Dict[str, Any]:
+    element: Dict[str, Any] = {"tag": "text", "text": text if text else " "}
+    enabled_style: list[str] = []
+    for key, value in style.items():
+        api_key = _FEISHU_POST_STYLE_KEYS.get(key)
+        if value and api_key and api_key not in enabled_style:
+            enabled_style.append(api_key)
+    if enabled_style:
+        element["style"] = enabled_style
+    return element
+
+
+def _parse_inline_markdown_post_elements(text: str) -> List[Dict[str, Any]]:
+    """Convert common Markdown inline syntax to native Feishu post elements."""
+    elements: List[Dict[str, Any]] = []
+    token_re = re.compile(
+        r"(\*\*[^*\n]+?\*\*|(?<![\w\"'./\\])\*[^*\n]+?\*(?![\w\"'./\\])|~~[^~\n]+?~~|<u>[\s\S]*?</u>|`[^`\n]+`|\[[^\]]+\]\([^)]+\))"
+    )
+    pos = 0
+    for match in token_re.finditer(text):
+        if match.start() > pos:
+            elements.append(_text_post_element(text[pos:match.start()]))
+        token = match.group(0)
+        if token.startswith("**") and token.endswith("**"):
+            elements.append(_text_post_element(token[2:-2], bold=True))
+        elif token.startswith("*") and token.endswith("*"):
+            elements.append(_text_post_element(token[1:-1], italic=True))
+        elif token.startswith("~~") and token.endswith("~~"):
+            elements.append(_text_post_element(token[2:-2], strikethrough=True))
+        elif token.startswith("<u>") and token.endswith("</u>"):
+            elements.append(_text_post_element(token[3:-4], underline=True))
+        elif token.startswith("`") and token.endswith("`"):
+            elements.append(_text_post_element(token[1:-1]))
+        else:
+            link_match = _MARKDOWN_LINK_RE.fullmatch(token)
+            if link_match:
+                elements.append(
+                    {
+                        "tag": "a",
+                        "text": link_match.group(1),
+                        "href": link_match.group(2).strip(),
+                    }
+                )
+            else:
+                elements.append(_text_post_element(token))
+        pos = match.end()
+    if pos < len(text):
+        elements.append(_text_post_element(text[pos:]))
+    return elements or [_text_post_element("")]
 
     Feishu's `md` renderer can swallow trailing content when a fenced code block
     appears inside one large markdown element. Split the reply at real fence
@@ -579,10 +779,8 @@ def _build_markdown_post_rows(content: str) -> List[List[Dict[str, str]]]:
         nonlocal current
         if not current:
             return
-        segment = "\n".join(current)
-        if segment.strip():
-            rows.append([{"tag": "md", "text": segment}])
-        current = []
+        rows.append([_text_post_element("\n".join(code_lines))])
+        code_lines = []
 
     for raw_line in content.splitlines():
         stripped_line = raw_line.strip()
