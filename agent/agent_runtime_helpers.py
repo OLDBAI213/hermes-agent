@@ -969,6 +969,14 @@ def restore_primary_runtime(agent) -> bool:
             agent._transport_cache.clear()
         agent.api_key = rt["api_key"]
         agent._client_kwargs = dict(rt["client_kwargs"])
+        agent._config_context_length = rt.get(
+            "config_context_length",
+            resolve_runtime_config_context_length(
+                rt["model"],
+                rt["provider"],
+                rt["base_url"],
+            ),
+        )
         agent._use_prompt_caching = rt["use_prompt_caching"]
         # Default to native layout when the restored snapshot predates the
         # native-vs-proxy split (older sessions saved before this PR).

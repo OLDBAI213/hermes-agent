@@ -494,81 +494,56 @@ class AIAgent:
                 "Session DB creation failed (will retry next turn): %s", e
             )
 
-    def _transition_context_engine_session(
-        self,
-        *,
-        old_session_id: Optional[str] = None,
-        new_session_id: Optional[str] = None,
-        previous_messages: Optional[list] = None,
-        carry_over_context: bool = False,
-        reset_engine: bool = True,
-        **extra_context,
-    ) -> None:
-        """Notify the active context engine about a host session transition.
+    def _append_dynamic_tool_schemas(self) -> None:
+        existing = {
+            t.get("function", {}).get("name")
+            for t in self.tools or []
+            if isinstance(t, dict)
+        }
 
-        Generic host-side lifecycle helper. The built-in compressor keeps its
-        existing reset behavior; plugin engines that implement richer hooks
-        (``on_session_end``, ``on_session_reset``, ``on_session_start``,
-        ``carry_over_new_session_context``) can flush old-session state,
-        reset runtime counters, bind to the new session, and optionally
-        carry retained context forward.
-        """
-        engine = getattr(self, "context_compressor", None)
-        if not engine:
-            return
+        if self._memory_manager and self.tools is not None:
+            for schema in self._memory_manager.get_all_tool_schemas():
+                name = schema.get("name", "")
+                if name and name in existing:
+                    continue
+                self.tools.append({"type": "function", "function": schema})
+                if name:
+                    self.valid_tool_names.add(name)
+                    existing.add(name)
 
-        if old_session_id and previous_messages is not None and hasattr(engine, "on_session_end"):
-            try:
-                engine.on_session_end(old_session_id, previous_messages)
-            except Exception as exc:
-                logger.debug("context engine on_session_end during transition: %s", exc)
-
-        if reset_engine and hasattr(engine, "on_session_reset"):
-            try:
-                engine.on_session_reset()
-            except Exception as exc:
-                logger.debug("context engine on_session_reset during transition: %s", exc)
-
-        should_start = bool(
-            old_session_id
-            or previous_messages is not None
-            or carry_over_context
-            or extra_context
-        )
-        target_session_id = new_session_id or getattr(self, "session_id", "") or ""
-        if should_start and target_session_id and hasattr(engine, "on_session_start"):
-            start_context = {
-                "old_session_id": old_session_id,
-                "carry_over_context": carry_over_context,
-                "platform": getattr(self, "platform", None) or os.environ.get("HERMES_SESSION_SOURCE", "cli"),
-                "model": getattr(self, "model", ""),
-                "context_length": getattr(engine, "context_length", None),
-                "conversation_id": getattr(self, "_gateway_session_key", None),
-            }
-            start_context.update(extra_context)
-            start_context = {k: v for k, v in start_context.items() if v not in (None, "")}
-            try:
-                engine.on_session_start(target_session_id, **start_context)
-            except Exception as exc:
-                logger.debug("context engine on_session_start during transition: %s", exc)
-
+        self._context_engine_tool_names = set()
         if (
-            carry_over_context
-            and old_session_id
-            and target_session_id
-            and hasattr(engine, "carry_over_new_session_context")
+            hasattr(self, "context_compressor")
+            and self.context_compressor
+            and self.tools is not None
         ):
-            try:
-                engine.carry_over_new_session_context(old_session_id, target_session_id)
-            except Exception as exc:
-                logger.debug("context engine carry_over_new_session_context during transition: %s", exc)
+            for schema in self.context_compressor.get_tool_schemas():
+                name = schema.get("name", "")
+                if name and name in existing:
+                    continue
+                self.tools.append({"type": "function", "function": schema})
+                if name:
+                    self.valid_tool_names.add(name)
+                    self._context_engine_tool_names.add(name)
+                    existing.add(name)
 
-    def reset_session_state(
-        self,
-        previous_messages: Optional[list] = None,
-        old_session_id: Optional[str] = None,
-        carry_over_context: bool = False,
-    ):
+    def refresh_tools(self) -> None:
+        """Rebuild the live tool surface after dynamic MCP registration."""
+        self.tools = get_tool_definitions(
+            enabled_toolsets=self.enabled_toolsets,
+            disabled_toolsets=self.disabled_toolsets,
+            quiet_mode=True,
+        )
+        self.valid_tool_names = {
+            tool["function"]["name"] for tool in self.tools or []
+        }
+        self._append_dynamic_tool_schemas()
+        self._kanban_worker_guidance = (
+            KANBAN_GUIDANCE if "kanban_show" in self.valid_tool_names else ""
+        )
+        self._invalidate_system_prompt()
+
+    def reset_session_state(self):
         """Reset all session-scoped token counters to 0 for a fresh session.
         
         This method encapsulates the reset logic for all session-level metrics
@@ -1354,7 +1329,30 @@ class AIAgent:
             review_memory=review_memory,
             review_skills=review_skills,
         )
-        t = threading.Thread(target=target, daemon=True, name="bg-review")
+        parent_turn_seq = getattr(self, "_foreground_turn_seq", 0)
+        delay_seconds = 0.0
+        if getattr(self, "platform", "") == "tui":
+            try:
+                delay_seconds = max(
+                    0.0,
+                    float(os.getenv("HERMES_BACKGROUND_REVIEW_DELAY_SECONDS", "8")),
+                )
+            except (TypeError, ValueError):
+                delay_seconds = 8.0
+
+        def _target_with_frontend_idle_gate() -> None:
+            if delay_seconds > 0:
+                time.sleep(delay_seconds)
+                if getattr(self, "_foreground_turn_seq", 0) != parent_turn_seq:
+                    logger.info(
+                        "Background review skipped because a new foreground TUI turn started"
+                    )
+                    return
+            target()
+
+        t = threading.Thread(
+            target=_target_with_frontend_idle_gate, daemon=True, name="bg-review"
+        )
         t.start()
 
     def _build_memory_write_metadata(
@@ -3484,13 +3482,12 @@ class AIAgent:
             return cached
 
         role_label = {
-            "assistant": "assistant",
-            "tool": "tool result",
-        }.get(role, "user")
+            "assistant": "助手",
+            "tool": "工具结果",
+        }.get(role, "用户")
         analysis_prompt = (
-            "Describe everything visible in this image in thorough detail. "
-            "Include any text, code, UI, data, objects, people, layout, colors, "
-            "and any other notable visual information."
+            "请用中文详细描述这张图片里能看到的所有内容。"
+            "包括文字、代码、界面、数据、对象、人物、布局、颜色，以及其他重要视觉信息。"
         )
 
         vision_source = str(image_url or "")
@@ -3508,7 +3505,7 @@ class AIAgent:
             result = json.loads(result_json) if isinstance(result_json, str) else {}
             description = (result.get("analysis") or "").strip()
         except Exception as e:
-            description = f"Image analysis failed: {e}"
+            description = f"图片自动识别失败：{e}"
         finally:
             if cleanup_path and cleanup_path.exists():
                 try:
@@ -3517,12 +3514,12 @@ class AIAgent:
                     pass
 
         if not description:
-            description = "Image analysis failed."
+            description = "图片自动识别失败。"
 
-        note = f"[The {role_label} attached an image. Here's what it contains:\n{description}]"
+        note = f"[{role_label}发送了一张图片，已自动识别到以下内容：\n{description}]"
         if vision_source and not str(image_url or "").startswith("data:"):
             note += (
-                f"\n[If you need a closer look, use vision_analyze with image_url: {vision_source}]"
+                f"\n[如需进一步查看细节，可使用 视觉分析 工具，图片路径：{vision_source}]"
             )
 
         self._anthropic_image_fallback_cache[cache_key] = note
@@ -3544,8 +3541,37 @@ class AIAgent:
         """
         try:
             from hermes_cli.config import load_config
-            from agent.image_routing import _lookup_supports_vision
-            cfg = load_config()
+
+            cfg = load_config() or {}
+            agent_cfg = cfg.get("agent") or {}
+            if isinstance(agent_cfg, dict):
+                image_mode = str(agent_cfg.get("image_input_mode") or "").strip().lower()
+                if image_mode in {"native", "text"}:
+                    forced_image_mode = image_mode
+                if forced_image_mode == "native":
+                    return True
+                if forced_image_mode == "text":
+                    return False
+        except Exception:
+            pass
+
+        forced_image_mode: Optional[str] = None
+        try:
+            from hermes_cli.config import load_config
+
+            cfg = load_config() or {}
+            agent_cfg = cfg.get("agent") or {}
+            if isinstance(agent_cfg, dict):
+                image_mode = str(agent_cfg.get("image_input_mode") or "").strip().lower()
+                if image_mode in {"native", "text"}:
+                    forced_image_mode = image_mode
+                if forced_image_mode == "text":
+                    return False
+        except Exception:
+            pass
+
+        try:
+            from agent.models_dev import get_model_capabilities
             provider = (getattr(self, "provider", "") or "").strip()
             model = (getattr(self, "model", "") or "").strip()
             return _lookup_supports_vision(provider, model, cfg) is True
@@ -3579,7 +3605,7 @@ class AIAgent:
                 if image_url:
                     image_notes.append(self._describe_image_for_anthropic_fallback(image_url, role))
                 else:
-                    image_notes.append("[An image was attached but no image source was available.]")
+                    image_notes.append("[已附加图片，但没有可用的图片来源。]")
                 continue
 
             text = str(part.get("text", "") or "").strip()
@@ -3594,7 +3620,7 @@ class AIAgent:
             return prefix
         if suffix:
             return suffix
-        return "[A multimodal message was converted to text for Anthropic compatibility.]"
+        return "[多模态消息已转换为文本，以兼容当前模型。]"
 
     def _get_transport(self, api_mode: str = None):
         """Return the cached transport for the given (or current) api_mode.

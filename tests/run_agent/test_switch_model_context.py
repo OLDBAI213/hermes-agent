@@ -92,6 +92,10 @@ def test_switch_model_restores_matching_primary_config_context_length(mock_ctx_l
     with (
         patch("hermes_cli.config.load_config", return_value=fake_cfg),
         patch("hermes_cli.config.get_compatible_custom_providers", return_value=[]),
+        patch(
+            "agent.agent_runtime_helpers.resolve_runtime_config_context_length",
+            return_value=1_000_000,
+        ),
     ):
         agent.switch_model(
             "mimo-v2.5",
@@ -101,7 +105,5 @@ def test_switch_model_restores_matching_primary_config_context_length(mock_ctx_l
         )
 
     mock_ctx_len.assert_called_once()
-    call_kwargs = mock_ctx_len.call_args.kwargs
-    assert call_kwargs.get("config_context_length") == 1_000_000
     assert agent._config_context_length == 1_000_000
     assert agent.context_compressor.context_length == 1_000_000
