@@ -993,6 +993,17 @@ class TestBedrockContextResolution:
         )
         assert ctx == 1_050_000
 
+    @patch("agent.model_metadata._query_ollama_api_show")
+    def test_openrouter_skips_ollama_api_show_probe(self, mock_ollama):
+        """OpenRouter fallback must not block on Ollama's /api/show probe."""
+        ctx = get_model_context_length(
+            "anthropic/claude-sonnet-4",
+            provider="openrouter",
+            base_url="https://openrouter.ai/api/v1",
+        )
+        assert ctx > 0
+        mock_ollama.assert_not_called()
+
 
 # =========================================================================
 # _strip_provider_prefix — Ollama model:tag vs provider:model

@@ -246,6 +246,25 @@ class TestPluginLoading:
 
         assert "hermes_plugins.ns_plugin" in sys.modules
 
+    def test_bundled_src_suite_plugin_loads_when_enabled(self, tmp_path, monkeypatch):
+        """The bundled src-suite manifest must not be half-enabled."""
+        hermes_home = tmp_path / "hermes_test"
+        hermes_home.mkdir(parents=True, exist_ok=True)
+        (hermes_home / "config.yaml").write_text(
+            yaml.safe_dump({"plugins": {"enabled": ["src-suite"]}}),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        mgr = PluginManager()
+        mgr.discover_and_load()
+
+        assert "src-suite" in mgr._plugins
+        entry = mgr._plugins["src-suite"]
+        assert entry.enabled
+        assert entry.error is None
+        assert "src-suite" in mgr._plugin_commands
+
     def test_user_memory_plugin_auto_coerced_to_exclusive(self, tmp_path, monkeypatch):
         """User-installed memory plugins must NOT be loaded by the general
         PluginManager — they belong to plugins/memory discovery.

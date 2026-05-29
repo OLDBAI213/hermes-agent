@@ -7,6 +7,7 @@ Handles: hermes gateway [run|start|stop|restart|status|install|uninstall|setup]
 import asyncio
 import logging
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -285,6 +286,27 @@ def _append_unique_pid(pids: list[int], pid: int | None, exclude_pids: set[int])
     pids.append(pid)
 
 
+_GATEWAY_RUN_COMMAND_RE = re.compile(
+    r"(?i)(?:"
+    r"(?:^|\s)(?:-m\s+hermes_cli\.main|(?:\S*[\\/])?hermes_cli[\\/]+main\.py|(?:\S*[\\/])?hermes(?:\.exe)?)"
+    r"(?:\s+(?:--profile|-p)\s+\S+)*\s+gateway\s+run\b"
+    r"|(?:^|\s)(?:\S*[\\/])?gateway[\\/]+run\.py\b"
+    r")"
+)
+
+
+def _is_gateway_run_command(command: str) -> bool:
+    """Return True only for actual gateway runtime processes.
+
+    Management commands such as ``hermes gateway restart`` may remain alive
+    while they are waiting for a service transition. Counting those as gateway
+    runtimes makes status/restart think Hermes is healthy when only the manager
+    is stuck.
+    """
+    normalized = (command or "").replace('"', "").replace("'", "")
+    return bool(_GATEWAY_RUN_COMMAND_RE.search(normalized))
+
+
 def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> list[int]:
     """Best-effort process-table scan for gateway PIDs.
 
@@ -297,16 +319,6 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
     # gateway.  See #13242.
     exclude_pids = exclude_pids | _get_ancestor_pids()
     pids: list[int] = []
-    patterns = [
-        "hermes_cli.main gateway",
-        "hermes_cli.main --profile",
-        "hermes_cli.main -p",
-        "hermes_cli/main.py gateway",
-        "hermes_cli/main.py --profile",
-        "hermes_cli/main.py -p",
-        "hermes gateway",
-        "gateway/run.py",
-    ]
     current_home = str(get_hermes_home().resolve())
     current_profile_arg = _profile_arg(current_home)
     current_profile_name = current_profile_arg.split()[-1] if current_profile_arg else ""
@@ -387,7 +399,7 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
                     current_cmd = line[len("CommandLine="):]
                 elif line.startswith("ProcessId="):
                     pid_str = line[len("ProcessId="):]
-                    if any(p in current_cmd for p in patterns) and (
+                    if _is_gateway_run_command(current_cmd) and (
                         all_profiles or _matches_current_profile(current_cmd)
                     ):
                         try:
@@ -411,7 +423,7 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
                         try:
                             cmdline = open(f"/proc/{pid}/cmdline", "rb").read().decode("utf-8", errors="replace")
                             cmdline = cmdline.replace("\x00", " ")
-                            if any(p in cmdline for p in patterns) and (
+                            if _is_gateway_run_command(cmdline) and (
                                 all_profiles or _matches_current_profile(cmdline)
                             ):
                                 _append_unique_pid(pids, pid, exclude_pids)
@@ -454,7 +466,7 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
 
                     if pid is None:
                         continue
-                    if any(pattern in command for pattern in patterns) and (
+                    if _is_gateway_run_command(command) and (
                         all_profiles or _matches_current_profile(command)
                     ):
                         _append_unique_pid(pids, pid, exclude_pids)

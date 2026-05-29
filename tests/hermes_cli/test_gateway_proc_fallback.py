@@ -17,6 +17,7 @@ import hermes_cli.gateway as gateway_mod
 # ---------------------------------------------------------------------------
 
 _GATEWAY_CMD = "python -m hermes_cli.main gateway run"
+_GATEWAY_RESTART_CMD = "python -m hermes_cli.main gateway restart"
 _OTHER_CMD = "python -m some_other_thing"
 
 
@@ -59,6 +60,7 @@ class TestProcFallback:
         entries = {
             my_pid: "python -m hermes_cli.main",   # own process — excluded
             12345: _GATEWAY_CMD,
+            22334: _GATEWAY_RESTART_CMD,
             99999: _OTHER_CMD,
         }
         _isdir, _listdir, _open = _fake_proc_dir(entries)
@@ -74,6 +76,7 @@ class TestProcFallback:
             pids = gateway_mod._scan_gateway_pids(set(), all_profiles=True)
 
         assert 12345 in pids
+        assert 22334 not in pids
         assert 99999 not in pids
         mock_ps.assert_not_called()  # ps must NOT be called when /proc worked
 
@@ -110,6 +113,26 @@ class TestProcFallback:
 
         mock_ps.assert_called_once()
         assert 12345 in pids
+
+    def test_ignores_gateway_management_commands_from_ps(self):
+        ps_output = (
+            f"12345 {_GATEWAY_CMD}\n"
+            f"22334 {_GATEWAY_RESTART_CMD}\n"
+            "33445 python -m hermes_cli.main gateway status\n"
+        )
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ps_output
+
+        with (
+            patch("hermes_cli.gateway.is_windows", return_value=False),
+            patch("os.path.isdir", return_value=False),
+            patch("hermes_cli.gateway._get_ancestor_pids", return_value=set()),
+            patch("subprocess.run", return_value=mock_result),
+        ):
+            pids = gateway_mod._scan_gateway_pids(set(), all_profiles=True)
+
+        assert pids == [12345]
 
     def test_proc_permission_error_skips_pid(self):
         def _isdir(path):

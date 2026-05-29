@@ -465,6 +465,18 @@ def is_local_endpoint(base_url: str) -> bool:
     return False
 
 
+def _should_probe_ollama_api_show(provider: str, base_url: str) -> bool:
+    """Return True only for endpoints likely to implement Ollama's /api/show."""
+    normalized_provider = (provider or "").strip().lower()
+    if normalized_provider in {"ollama", "ollama-cloud"}:
+        return True
+    if base_url and base_url_host_matches(base_url, "ollama.com"):
+        return True
+    if base_url and is_local_endpoint(base_url):
+        return detect_local_server_type(base_url) == "ollama"
+    return False
+
+
 def detect_local_server_type(base_url: str, api_key: str = "") -> Optional[str]:
     """Detect which local server is running at base_url by probing known endpoints.
 
@@ -1608,13 +1620,14 @@ def get_model_context_length(
         if context_length is not None:
             return context_length
         if not _is_known_provider_base_url(base_url):
-            # 2b. Ollama native /api/show — any URL might be an Ollama server
-            # (local, cloud, or custom hosting).  Non-Ollama servers return
-            # 404/405 quickly.  Fall through on failure.
-            ctx = _query_ollama_api_show(model, base_url, api_key=api_key)
-            if ctx is not None:
-                save_context_length(model, base_url, ctx)
-                return ctx
+            # 2b. Ollama native /api/show — only probe endpoints that are
+            # likely Ollama. Generic OpenAI-compatible gateways can hang behind
+            # proxies when hit with /api/show, which delays fallback recovery.
+            if _should_probe_ollama_api_show(provider, base_url):
+                ctx = _query_ollama_api_show(model, base_url, api_key=api_key)
+                if ctx is not None:
+                    save_context_length(model, base_url, ctx)
+                    return ctx
             # 3. Try querying local server directly
             if is_local_endpoint(base_url):
                 local_ctx = _query_local_context_length(model, base_url, api_key=api_key)
@@ -1698,16 +1711,10 @@ def get_model_context_length(
         ctx = _resolve_endpoint_context_length(model, base_url, api_key=api_key)
         if ctx is not None:
             return ctx
-    # 5e. Ollama native /api/show probe — runs for ANY provider with a
-    # base_url, not just ollama-cloud.  Ollama-compatible servers expose
-    # this endpoint regardless of hostname (local Ollama, Ollama Cloud,
-    # custom Ollama hosting).  The OpenAI-compat /v1/models endpoint
-    # correctly omits context_length per the OpenAI schema, but /api/show
-    # returns the authoritative GGUF model_info.context_length.
-    # For non-Ollama servers (OpenAI, Anthropic, etc.), the POST returns
-    # 404/405 quickly.  Results are cached, so the hit is per-model+URL,
-    # once per hour.
-    if base_url:
+    # 5e. Ollama native /api/show probe. Keep this restricted to Ollama-like
+    # endpoints; unrelated providers should resolve through provider catalogs
+    # instead of paying a live probe penalty during fallback recovery.
+    if base_url and _should_probe_ollama_api_show(provider, base_url):
         ctx = _query_ollama_api_show(model, base_url, api_key=api_key)
         if ctx is not None:
             save_context_length(model, base_url, ctx)
