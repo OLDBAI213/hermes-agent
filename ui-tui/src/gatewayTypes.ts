@@ -1,3 +1,4 @@
+import type { TuiModuleSnapshot } from './domain/tuiModules.js'
 import type { SessionInfo, SlashCategory, SubagentStatus, Usage } from './types.js'
 
 export interface GatewaySkin {
@@ -48,6 +49,24 @@ export type CommandDispatchResponse =
   | { target: string; type: 'alias' }
   | { message?: string; name: string; type: 'skill' }
   | { message: string; notice?: string; type: 'send' }
+
+// ── TUI extension module protocol ───────────────────────────────────
+
+export interface TuiExtensionVersionResponse {
+  events?: string[]
+  name?: string
+  protocol?: number
+  slots?: string[]
+  states?: string[]
+  version?: string
+}
+
+export interface TuiModuleUpdateResponse {
+  event?: 'tui.module.update'
+  id?: string
+  ok?: boolean
+  session_id?: string
+}
 
 // ── Config ───────────────────────────────────────────────────────────
 
@@ -501,6 +520,7 @@ export type GatewayEvent =
   | { payload?: { text?: string }; session_id?: string; type: 'thinking.delta' }
   | { payload?: undefined; session_id?: string; type: 'message.start' }
   | { payload?: { kind?: string; text?: string }; session_id?: string; type: 'status.update' }
+  | { payload: Partial<TuiModuleSnapshot> & { id?: string }; session_id?: string; type: 'tui.module.update' }
   | { payload?: { state?: 'idle' | 'listening' | 'transcribing' }; session_id?: string; type: 'voice.status' }
   | { payload?: { no_speech_limit?: boolean; text?: string }; session_id?: string; type: 'voice.transcript' }
   | { payload: { line: string }; session_id?: string; type: 'gateway.stderr' }

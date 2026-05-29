@@ -313,3 +313,42 @@ def test_background_review_fork_skips_external_memory_plugins(monkeypatch):
         "the fork leaks harness prompts into the user's real memory "
         "namespace via on_turn_start / prefetch_all / sync_all."
     )
+
+
+def test_tui_background_review_skips_when_new_foreground_turn_starts(monkeypatch):
+    """TUI review forks should not silently compete with the next user turn."""
+    events = []
+
+    class FakeReviewAgent:
+        def __init__(self, **kwargs):
+            events.append(("init", kwargs))
+            self._session_messages = []
+
+        def run_conversation(self, **kwargs):
+            events.append(("run_conversation", kwargs))
+
+        def shutdown_memory_provider(self):
+            events.append(("shutdown_memory_provider", None))
+
+        def close(self):
+            events.append(("close", None))
+
+    monkeypatch.setattr(run_agent_module, "AIAgent", FakeReviewAgent)
+    monkeypatch.setattr(run_agent_module.threading, "Thread", ImmediateThread)
+
+    agent = _bare_agent()
+    agent.platform = "tui"
+    agent._foreground_turn_seq = 7
+
+    def _new_turn_during_delay(_seconds):
+        agent._foreground_turn_seq += 1
+
+    monkeypatch.setattr(run_agent_module.time, "sleep", _new_turn_during_delay)
+
+    AIAgent._spawn_background_review(
+        agent,
+        messages_snapshot=[{"role": "user", "content": "hello"}],
+        review_memory=True,
+    )
+
+    assert events == []

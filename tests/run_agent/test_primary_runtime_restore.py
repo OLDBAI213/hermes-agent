@@ -71,6 +71,7 @@ class TestPrimaryRuntimeSnapshot:
         assert rt["provider"] == "custom"
         assert rt["base_url"] == "https://my-llm.example.com/v1"
         assert rt["api_mode"] == agent.api_mode
+        assert "config_context_length" in rt
         assert "client_kwargs" in rt
         assert "compressor_context_length" in rt
 
@@ -220,6 +221,18 @@ class TestRestorePrimaryRuntime:
             agent._restore_primary_runtime()
 
         assert agent._use_prompt_caching == original_caching
+
+    def test_restores_config_context_length(self):
+        """Primary runtime restore must also bring back the explicit config override."""
+        agent = _make_agent()
+        agent._primary_runtime["config_context_length"] = 1_000_000
+        agent._fallback_activated = True
+        agent._config_context_length = None
+
+        with patch("run_agent.OpenAI", return_value=MagicMock()):
+            agent._restore_primary_runtime()
+
+        assert agent._config_context_length == 1_000_000
 
     def test_restore_survives_exception(self):
         """If client rebuild fails, the method returns False gracefully."""

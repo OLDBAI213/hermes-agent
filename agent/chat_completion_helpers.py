@@ -33,6 +33,7 @@ from agent.message_sanitization import (
     _sanitize_surrogates,
     _repair_tool_call_arguments,
 )
+from agent.status_events import emit_tui_model_status
 from tools.terminal_tool import is_persistent_env
 from utils import base_url_host_matches, base_url_hostname
 
@@ -1118,10 +1119,16 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
 
         old_model = agent.model
 
-        # Clear the per-config context_length override so the fallback
-        # model's actual context window is resolved instead of inheriting
-        # the stale value from the previous model.  See #22387.
-        agent._config_context_length = None
+        # Resolve the fallback target's own explicit config override, if any.
+        # This avoids inheriting the previous model's override while still
+        # preserving legitimate per-model values when the fallback target
+        # itself is explicitly configured.
+        from agent.agent_runtime_helpers import resolve_runtime_config_context_length
+        agent._config_context_length = resolve_runtime_config_context_length(
+            fb_model,
+            fb_provider,
+            fb_base_url,
+        )
         agent.model = fb_model
         agent.provider = fb_provider
         agent.base_url = fb_base_url
@@ -2318,6 +2325,11 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             _waiting_secs = int(_hb_now - last_chunk_time["t"])
             agent._touch_activity(
                 f"waiting for stream response ({_waiting_secs}s, no chunks yet)"
+            )
+            emit_tui_model_status(
+                agent,
+                f"仍在等待响应 · 已等待 {_waiting_secs}s",
+                debug_context="stream heartbeat",
             )
 
         # Detect stale streams: connections kept alive by SSE pings

@@ -2,7 +2,7 @@
 #
 # Run from a PowerShell prompt:
 #
-#   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test-install-ps1-stage-protocol.ps1
+#   pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test-install-ps1-stage-protocol.ps1
 #
 # These tests only exercise the metadata surface (-ProtocolVersion, -Manifest,
 # unknown -Stage handling).  They DO NOT actually run any install stages --
@@ -21,6 +21,40 @@ if (-not (Test-Path $installScript)) {
 }
 
 $failures = 0
+
+function Resolve-PowerShellHost {
+    try {
+        $current = (Get-Process -Id $PID -ErrorAction SilentlyContinue).Path
+        if ($current -and (Test-Path $current)) {
+            return $current
+        }
+    } catch {
+        # Fall back to command/path probing below.
+    }
+
+    foreach ($name in @("pwsh", "powershell", "powershell.exe")) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($cmd -and $cmd.Source) {
+            return $cmd.Source
+        }
+    }
+
+    $systemRoot = $env:SystemRoot
+    if (-not $systemRoot) {
+        $systemRoot = $env:WINDIR
+    }
+    if ($systemRoot) {
+        $winPs = Join-Path $systemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+        if (Test-Path $winPs) {
+            return $winPs
+        }
+    }
+
+    throw "PowerShell host not found"
+}
+
+$powerShellHost = Resolve-PowerShellHost
+
 function Assert-Equal {
     param([Parameter(Mandatory=$true)] $Expected,
           [Parameter(Mandatory=$true)] $Actual,
@@ -50,7 +84,7 @@ function Assert-True {
 # -----------------------------------------------------------------------------
 Write-Host ""
 Write-Host "-- -ProtocolVersion --"
-$output = & powershell -NoProfile -ExecutionPolicy Bypass -File $installScript -ProtocolVersion
+$output = & $powerShellHost -NoProfile -ExecutionPolicy Bypass -File $installScript -ProtocolVersion
 Assert-Equal -Expected 0 -Actual $LASTEXITCODE -Label "-ProtocolVersion exits 0"
 Assert-True ($output -match '^\d+$') -Label "-ProtocolVersion emits an integer (got: $output)"
 
@@ -59,7 +93,7 @@ Assert-True ($output -match '^\d+$') -Label "-ProtocolVersion emits an integer (
 # -----------------------------------------------------------------------------
 Write-Host ""
 Write-Host "-- -Manifest --"
-$manifestJson = & powershell -NoProfile -ExecutionPolicy Bypass -File $installScript -Manifest
+$manifestJson = & $powerShellHost -NoProfile -ExecutionPolicy Bypass -File $installScript -Manifest
 Assert-Equal -Expected 0 -Actual $LASTEXITCODE -Label "-Manifest exits 0"
 
 $manifest = $null
@@ -104,7 +138,7 @@ if ($manifest) {
 # -----------------------------------------------------------------------------
 Write-Host ""
 Write-Host "-- -Stage with unknown name --"
-$errOutput = & powershell -NoProfile -ExecutionPolicy Bypass -File $installScript -Stage "does-not-exist"
+$errOutput = & $powerShellHost -NoProfile -ExecutionPolicy Bypass -File $installScript -Stage "does-not-exist"
 Assert-Equal -Expected 2 -Actual $LASTEXITCODE -Label "unknown -Stage exits 2"
 
 $errFrame = $null

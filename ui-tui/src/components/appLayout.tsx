@@ -27,6 +27,7 @@ import { MessageLine } from './messageLine.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
+import { TuiModuleHost } from './tuiModuleHost.js'
 
 const PromptPrefix = memo(function PromptPrefix({
   bold = false,
@@ -144,6 +145,7 @@ const TranscriptPane = memo(function TranscriptPane({
             progress={progress}
             sections={ui.sections}
           />
+          <TuiModuleHost cols={composer.cols} slot="transcript.live_tail" />
         </Box>
       </ScrollBox>
 

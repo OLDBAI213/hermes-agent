@@ -16,7 +16,7 @@ import {
   stripAnsi
 } from '../lib/text.js'
 import type { Theme } from '../theme.js'
-import type { ActiveTool, DetailsMode, Msg, SectionVisibility } from '../types.js'
+import type { ActiveTool, DetailsMode, Msg, SectionVisibility, TurnPhase } from '../types.js'
 
 import { Md } from './markdown.js'
 import { StreamingMd } from './streamingMarkdown.js'
@@ -35,7 +35,8 @@ export const MessageLine = memo(function MessageLine({
   msg,
   sections,
   t,
-  tools = []
+  tools = [],
+  turnPhase
 }: MessageLineProps) {
   // Per-section overrides win over the global mode, so resolve each section
   // we might consume here once and gate visibility on the *content-bearing*
@@ -64,7 +65,7 @@ export const MessageLine = memo(function MessageLine({
     )
   }
 
-  if (msg.kind === 'trail' && (msg.tools?.length || tools.length || thinking)) {
+  if (msg.kind === 'trail' && (msg.tools?.length || tools.length || thinking || turnPhase)) {
     return thinkingMode !== 'hidden' || toolsMode !== 'hidden' || activityMode !== 'hidden' ? (
       <Box flexDirection="column">
         <ToolTrail
@@ -77,6 +78,7 @@ export const MessageLine = memo(function MessageLine({
           tools={tools}
           toolTokens={msg.toolTokens}
           trail={msg.tools ?? []}
+          turnPhase={turnPhase}
         />
       </Box>
     ) : null
@@ -193,6 +195,7 @@ export const MessageLine = memo(function MessageLine({
             t={t}
             toolTokens={msg.toolTokens}
             trail={msg.tools}
+            turnPhase={turnPhase}
           />
         </Box>
       )}
@@ -234,4 +237,5 @@ interface MessageLineProps {
   sections?: SectionVisibility
   t: Theme
   tools?: ActiveTool[]
+  turnPhase?: null | TurnPhase
 }

@@ -965,6 +965,34 @@ class TestBedrockContextResolution:
         assert ctx == 50000
         assert mock_fetch.called
 
+    @patch("agent.model_metadata.is_local_endpoint", return_value=False)
+    @patch("agent.model_metadata._query_ollama_api_show", return_value=None)
+    @patch("agent.model_metadata.fetch_endpoint_model_metadata")
+    def test_custom_endpoint_missing_context_length_falls_through_to_model_defaults(
+        self,
+        mock_fetch,
+        _mock_ollama,
+        _mock_local,
+    ):
+        """A custom OpenAI-compatible /models list with IDs only should not
+        short-circuit to the generic 256K fallback before model heuristics run.
+
+        Regression for custom gateways such as aiwano.cn that return::
+
+            {"id": "gpt-5.5", ...}
+
+        without a ``context_length`` field. We should keep walking the
+        resolution chain so ``gpt-5.5`` can still resolve to its known
+        large context window instead of being compressed too early.
+        """
+        mock_fetch.return_value = {"gpt-5.5": {"id": "gpt-5.5"}}
+        ctx = get_model_context_length(
+            "gpt-5.5",
+            provider="custom",
+            base_url="https://aiwano.cn/v1",
+        )
+        assert ctx == 1_050_000
+
 
 # =========================================================================
 # _strip_provider_prefix — Ollama model:tag vs provider:model

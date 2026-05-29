@@ -3056,7 +3056,7 @@ class SessionDB:
             try:
                 rows = self._conn.execute(
                     "SELECT * FROM telegram_dm_topic_bindings "
-                    "WHERE chat_id = ? ORDER BY updated_at DESC",
+                    "WHERE chat_id = ? ORDER BY updated_at DESC, linked_at DESC, rowid DESC",
                     (str(chat_id),),
                 ).fetchall()
             except sqlite3.OperationalError:
@@ -3446,4 +3446,3 @@ class SessionDB:
                 (error[:500], session_id),
             )
         self._execute_write(_do)
-

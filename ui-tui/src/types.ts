@@ -6,6 +6,17 @@ export interface ActiveTool {
   startedAt?: number
 }
 
+export interface TurnPhase {
+  activeToolCount: number
+  completedToolCount: number
+  failedToolCount: number
+  lastError?: string
+  label: string
+  startedAt?: number
+  status: 'idle' | 'model_wait' | 'streaming' | 'tool_running' | 'tool_failed' | 'wrapping'
+  totalToolCount: number
+}
+
 export interface TodoItem {
   content: string
   id: string
@@ -144,6 +155,8 @@ export interface McpServerStatus {
 }
 
 export interface SessionInfo {
+  config_warning?: string
+  credential_warning?: string
   cwd?: string
   fast?: boolean
   lazy?: boolean
@@ -153,6 +166,7 @@ export interface SessionInfo {
   reasoning_effort?: string
   release_date?: string
   service_tier?: string
+  show_reasoning?: boolean
   skills: Record<string, string[]>
   system_prompt?: string
   tools: Record<string, string[]>

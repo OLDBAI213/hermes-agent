@@ -81,20 +81,20 @@ class TestCacheSticker:
 class TestBuildStickerInjection:
     def test_exact_format_no_context(self):
         result = build_sticker_injection("A cat waving")
-        assert result == '[The user sent a sticker~ It shows: "A cat waving" (=^.w.^=)]'
+        assert result == '[用户发送了一张贴纸。画面内容："A cat waving" (=^.w.^=)]'
 
     def test_exact_format_emoji_only(self):
         result = build_sticker_injection("A cat", emoji="😀")
-        assert result == '[The user sent a sticker 😀~ It shows: "A cat" (=^.w.^=)]'
+        assert result == '[用户发送了一张贴纸 😀。画面内容："A cat" (=^.w.^=)]'
 
     def test_exact_format_emoji_and_set_name(self):
         result = build_sticker_injection("A cat", emoji="😀", set_name="MyPack")
-        assert result == '[The user sent a sticker 😀 from "MyPack"~ It shows: "A cat" (=^.w.^=)]'
+        assert result == '[用户发送了一张贴纸 😀，来自贴纸包 "MyPack"。画面内容："A cat" (=^.w.^=)]'
 
     def test_set_name_without_emoji_ignored(self):
         """set_name alone (no emoji) produces no context — only emoji+set_name triggers 'from' clause."""
         result = build_sticker_injection("A cat", set_name="MyPack")
-        assert result == '[The user sent a sticker~ It shows: "A cat" (=^.w.^=)]'
+        assert result == '[用户发送了一张贴纸。画面内容："A cat" (=^.w.^=)]'
         assert "MyPack" not in result
 
     def test_description_with_quotes(self):
@@ -104,20 +104,20 @@ class TestBuildStickerInjection:
 
     def test_empty_description(self):
         result = build_sticker_injection("")
-        assert result == '[The user sent a sticker~ It shows: "" (=^.w.^=)]'
+        assert result == '[用户发送了一张贴纸。画面内容："" (=^.w.^=)]'
 
 
 class TestBuildAnimatedStickerInjection:
     def test_exact_format_with_emoji(self):
         result = build_animated_sticker_injection(emoji="🎉")
         assert result == (
-            "[The user sent an animated sticker 🎉~ "
-            "I can't see animated ones yet, but the emoji suggests: 🎉]"
+            "[用户发送了一张动态贴纸 🎉。"
+            "当前还不能查看动态贴纸内容，但表情提示可能是：🎉]"
         )
 
     def test_exact_format_without_emoji(self):
         result = build_animated_sticker_injection()
-        assert result == "[The user sent an animated sticker~ I can't see animated ones yet]"
+        assert result == "[用户发送了一张动态贴纸。当前还不能查看动态贴纸内容。]"
 
     def test_empty_emoji_same_as_no_emoji(self):
         result = build_animated_sticker_injection(emoji="")

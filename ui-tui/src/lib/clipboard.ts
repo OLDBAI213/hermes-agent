@@ -4,8 +4,11 @@ import { promisify } from 'node:util'
 const execFileAsync = promisify(execFile)
 const CLIPBOARD_MAX_BUFFER = 4 * 1024 * 1024
 const POWERSHELL_ARGS = ['-NoProfile', '-NonInteractive', '-Command', 'Get-Clipboard -Raw'] as const
+const SET_CLIPBOARD_ARGS = ['-NoProfile', '-NonInteractive', '-Command', 'Set-Clipboard -Value $input'] as const
+const WINDOWS_POWERSHELL_CMDS = ['pwsh', 'powershell', 'powershell.exe'] as const
 
 type ClipboardRun = typeof execFileAsync
+type ClipboardCommand = { args: readonly string[]; cmd: string }
 
 export function isUsableClipboardText(text: null | string): text is string {
   if (!text || !/[^\s]/.test(text)) {
@@ -33,16 +36,16 @@ export function isUsableClipboardText(text: null | string): text is string {
 function readClipboardCommands(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv
-): Array<{ args: readonly string[]; cmd: string }> {
+): ClipboardCommand[] {
   if (platform === 'darwin') {
     return [{ cmd: 'pbpaste', args: [] }]
   }
 
   if (platform === 'win32') {
-    return [{ cmd: 'powershell', args: POWERSHELL_ARGS }]
+    return WINDOWS_POWERSHELL_CMDS.map(cmd => ({ cmd, args: POWERSHELL_ARGS }))
   }
 
-  const attempts: Array<{ args: readonly string[]; cmd: string }> = []
+  const attempts: ClipboardCommand[] = []
 
   if (env.WSL_INTEROP || env.WSL_DISTRO_NAME) {
     attempts.push({ cmd: 'powershell.exe', args: POWERSHELL_ARGS })
@@ -94,21 +97,21 @@ export async function readClipboardText(
 function writeClipboardCommands(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv
-): Array<{ args: readonly string[]; cmd: string }> {
+): ClipboardCommand[] {
   if (platform === 'darwin') {
     return [{ cmd: 'pbcopy', args: [] }]
   }
 
   if (platform === 'win32') {
-    return [{ cmd: 'powershell', args: ['-NoProfile', '-NonInteractive', '-Command', 'Set-Clipboard -Value $input'] }]
+    return WINDOWS_POWERSHELL_CMDS.map(cmd => ({ cmd, args: SET_CLIPBOARD_ARGS }))
   }
 
-  const attempts: Array<{ args: readonly string[]; cmd: string }> = []
+  const attempts: ClipboardCommand[] = []
 
   if (env.WSL_INTEROP || env.WSL_DISTRO_NAME) {
     attempts.push({
       cmd: 'powershell.exe',
-      args: ['-NoProfile', '-NonInteractive', '-Command', 'Set-Clipboard -Value $input']
+      args: SET_CLIPBOARD_ARGS
     })
   }
 

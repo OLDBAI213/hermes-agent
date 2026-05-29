@@ -2,7 +2,7 @@ import { atom } from 'nanostores'
 import { useSyncExternalStore } from 'react'
 
 import { isTodoDone } from '../lib/liveProgress.js'
-import type { ActiveTool, ActivityItem, Msg, SubagentProgress, TodoItem } from '../types.js'
+import type { ActiveTool, ActivityItem, Msg, SubagentProgress, TodoItem, TurnPhase } from '../types.js'
 
 const buildTurnState = (): TurnState => ({
   activity: [],
@@ -19,6 +19,7 @@ const buildTurnState = (): TurnState => ({
   todos: [],
   toolTokens: 0,
   tools: [],
+  turnPhase: null,
   turnTrail: []
 })
 
@@ -81,5 +82,6 @@ export interface TurnState {
   todos: TodoItem[]
   toolTokens: number
   tools: ActiveTool[]
+  turnPhase: null | TurnPhase
   turnTrail: string[]
 }

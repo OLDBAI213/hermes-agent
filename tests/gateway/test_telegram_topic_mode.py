@@ -173,7 +173,7 @@ async def test_root_telegram_dm_prompt_is_system_lobby_when_topic_mode_enabled(m
 
     result = await runner._handle_message(_make_event("hello from root"))
 
-    assert "main chat is reserved for system commands" in result
+    assert "主聊天只用于系统命令" in result
     assert "All Messages" in result
     runner._run_agent.assert_not_called()
     runner.session_store.get_or_create_session.assert_not_called()
@@ -195,9 +195,9 @@ async def test_root_telegram_dm_new_shows_create_topic_instruction(monkeypatch):
 
     result = await runner._handle_message(_make_event("/new"))
 
-    assert "create a new topic" in result
+    assert "创建一个新 topic" in result
     assert "All Messages" in result
-    assert "Use /new inside" in result
+    assert "才在已有 topic 里使用 /new" in result
     runner._run_agent.assert_not_called()
     runner.session_store.reset_session.assert_not_called()
     runner.session_store.get_or_create_session.assert_not_called()
@@ -339,8 +339,8 @@ async def test_group_new_keeps_existing_reset_semantics_when_dm_topic_mode_enabl
 
     result = await runner._handle_message(_make_group_event("/new", thread_id="555"))
 
-    assert "Started a new Hermes session in this topic" not in result
-    assert "parallel work" not in result
+    assert "已在这个 topic 中开启新的 Hermes 会话" not in result
+    assert "并行处理" not in result
     runner.session_store.reset_session.assert_called_once_with(group_key)
 
 
@@ -380,8 +380,8 @@ async def test_new_inside_telegram_topic_resets_current_topic_with_parallel_tip(
 
     result = await runner._handle_message(_make_event("/new", thread_id="17585"))
 
-    assert "Started a new Hermes session in this topic" in result
-    assert "parallel work" in result
+    assert "已在这个 topic 中开启新的 Hermes 会话" in result
+    assert "并行处理" in result
     assert "All Messages" in result
     runner.session_store.reset_session.assert_called_once_with(topic_key)
 
@@ -464,7 +464,7 @@ async def test_topic_root_command_explicitly_migrates_and_enables_topic_mode(tmp
 
     result = await runner._handle_message(_make_event("/topic"))
 
-    assert "Telegram multi-session topics are enabled" in result
+    assert "Telegram 多会话 topics 已启用" in result
     assert "All Messages" in result
     assert session_db.get_meta("telegram_dm_topic_schema_version") == "2"
     assert session_db.is_telegram_topic_mode_enabled(chat_id="208214988", user_id="208214988")
@@ -473,7 +473,7 @@ async def test_topic_root_command_explicitly_migrates_and_enables_topic_mode(tmp
 
     lobby_result = await runner._handle_message(_make_event("hello after activation"))
 
-    assert "main chat is reserved for system commands" in lobby_result
+    assert "主聊天只用于系统命令" in lobby_result
     runner._run_agent.assert_not_called()
 
 
@@ -520,11 +520,11 @@ async def test_topic_root_command_lists_unlinked_sessions_for_restore(tmp_path, 
 
     result = await runner._handle_message(_make_event("/topic"))
 
-    assert "Telegram multi-session topics are enabled" in result
-    assert "Previous unlinked sessions" in result
+    assert "Telegram 多会话 topics 已启用" in result
+    assert "可恢复的未绑定旧会话" in result
     assert "Old research" in result
     assert "old-unlinked" in result
-    assert "Send /topic old-unlinked inside a topic" in result
+    assert "发送 /topic old-unlinked" in result
     assert "Already linked" not in result
     assert "other-user" not in result
     runner._run_agent.assert_not_called()
@@ -546,8 +546,8 @@ async def test_topic_root_command_handles_no_unlinked_sessions(tmp_path, monkeyp
 
     result = await runner._handle_message(_make_event("/topic"))
 
-    assert "Telegram multi-session topics are enabled" in result
-    assert "No previous unlinked Telegram sessions found" in result
+    assert "Telegram 多会话 topics 已启用" in result
+    assert "没有找到可恢复的未绑定旧会话" in result
     assert "All Messages" in result
     runner._run_agent.assert_not_called()
 
@@ -615,8 +615,8 @@ async def test_topic_restore_inside_topic_binds_old_session_and_returns_last_ass
 
     result = await runner._handle_message(_make_event("/topic old-session", thread_id="17585"))
 
-    assert "Session restored: Research notes" in result
-    assert "Last Hermes message:" in result
+    assert "会话已恢复：Research notes" in result
+    assert "上一条 Hermes 回复：" in result
     assert "Here is the summary." in result
     binding = session_db.get_telegram_topic_binding(chat_id="208214988", thread_id="17585")
     assert binding is not None
@@ -645,7 +645,7 @@ async def test_topic_restore_refuses_session_owned_by_another_telegram_user(tmp_
 
     result = await runner._handle_message(_make_event("/topic other-session", thread_id="17585"))
 
-    assert "does not belong to this Telegram user" in result
+    assert "不属于当前 Telegram 用户" in result
     assert session_db.get_telegram_topic_binding(chat_id="208214988", thread_id="17585") is None
 
 
@@ -675,7 +675,7 @@ async def test_topic_restore_refuses_already_linked_session(tmp_path, monkeypatc
 
     result = await runner._handle_message(_make_event("/topic linked-session", thread_id="17585"))
 
-    assert "already linked to another Telegram topic" in result
+    assert "已经绑定到另一个 Telegram topic" in result
     assert session_db.get_telegram_topic_binding(chat_id="208214988", thread_id="17585") is None
 
 
@@ -735,7 +735,7 @@ async def test_topic_root_command_creates_and_pins_system_topic(tmp_path, monkey
 
     result = await runner._handle_message(_make_event("/topic"))
 
-    assert "Telegram multi-session topics are enabled" in result
+    assert "Telegram 多会话 topics 已启用" in result
     adapter._create_dm_topic.assert_awaited_once_with(208214988, "System")
     adapter.send.assert_awaited_once_with(
         "208214988",
@@ -1080,7 +1080,7 @@ async def test_topic_off_disables_mode_and_clears_bindings(tmp_path, monkeypatch
 
     result = await runner._handle_topic_command(_make_event("/topic off"))
 
-    assert "OFF" in result or "off" in result
+    assert "已关闭" in result
     assert db.is_telegram_topic_mode_enabled(
         chat_id="208214988", user_id="208214988"
     ) is False
@@ -1098,7 +1098,7 @@ async def test_topic_off_is_idempotent_when_never_enabled(tmp_path):
 
     result = await runner._handle_topic_command(_make_event("/topic off"))
 
-    assert "not currently enabled" in result
+    assert "当前没有启用" in result
 
 
 @pytest.mark.asyncio

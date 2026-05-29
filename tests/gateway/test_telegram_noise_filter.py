@@ -41,7 +41,7 @@ def test_telegram_status_sanitizes_raw_provider_security_errors():
     sanitized = _prepare_gateway_status_message(Platform.TELEGRAM, "lifecycle", raw)
 
     assert sanitized is not None
-    assert "provider rejected" in sanitized.lower()
+    assert ("provider rejected" in sanitized.lower()) or ("模型服务拒绝" in sanitized)
     assert "cybersecurity risk" not in sanitized.lower()
     assert "HTTP 400" not in sanitized
     assert "req_123" not in sanitized
@@ -56,7 +56,7 @@ def test_telegram_final_response_sanitizes_raw_provider_errors():
 
     sanitized = _sanitize_gateway_final_response(Platform.TELEGRAM, raw)
 
-    assert "provider rejected" in sanitized.lower()
+    assert ("provider rejected" in sanitized.lower()) or ("模型服务拒绝" in sanitized)
     assert "cybersecurity risk" not in sanitized.lower()
     assert "HTTP 400" not in sanitized
     assert "req_abc" not in sanitized
@@ -71,8 +71,8 @@ def test_telegram_final_response_redacts_auth_secrets():
 
     sanitized = _sanitize_gateway_final_response(Platform.TELEGRAM, raw)
 
-    assert "authentication failed" in sanitized.lower()
-    assert "check the configured credentials" in sanitized.lower()
+    assert ("authentication failed" in sanitized.lower()) or ("认证失败" in sanitized)
+    assert ("check the configured credentials" in sanitized.lower()) or ("检查当前凭据" in sanitized)
     assert "sk-live" not in sanitized
 
 

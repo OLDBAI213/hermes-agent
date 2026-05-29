@@ -2,13 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createSlashHandler } from '../app/createSlashHandler.js'
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
+import { getTuiModuleState, resetTuiModuleState, upsertTuiModuleSnapshot } from '../app/tuiModuleStore.js'
 import { getUiState, patchUiState, resetUiState } from '../app/uiStore.js'
 import { TUI_SESSION_MODEL_FLAG } from '../domain/slash.js'
+import { normalizeTuiModules, TUI_EXTENSION_VERSION } from '../domain/tuiModules.js'
 
 describe('createSlashHandler', () => {
   beforeEach(() => {
     resetOverlayState()
     resetUiState()
+    resetTuiModuleState()
   })
 
   it('opens the resume picker locally', () => {
@@ -34,6 +37,68 @@ describe('createSlashHandler', () => {
     expect(createSlashHandler(ctx)('/redraw')).toBe(true)
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
     expect(ctx.transcript.sys).toHaveBeenCalledWith('ui redrawn')
+  })
+
+  it('handles /tui-doctor locally and reports module state', () => {
+    patchUiState({
+      sid: 'sid-abc',
+      tuiModules: normalizeTuiModules({ news_panel: { enabled: true, slot: 'transcript.live_tail' } })
+    })
+    upsertTuiModuleSnapshot({ id: 'news_panel', state: 'ok', summary: '3 条更新', title: '新闻' })
+    const ctx = buildCtx()
+
+    expect(createSlashHandler(ctx)('/tui-doctor')).toBe(true)
+    expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
+    expect(ctx.transcript.page).toHaveBeenCalledWith(expect.stringContaining('news_panel: 正常'), 'TUI 诊断')
+    expect(ctx.transcript.page).toHaveBeenCalledWith(
+      expect.stringContaining(`- 版本: ${TUI_EXTENSION_VERSION}`),
+      'TUI 诊断'
+    )
+  })
+
+  it('handles /tui-module-smoke locally without writing config through the gateway', () => {
+    const ctx = buildCtx()
+
+    expect(createSlashHandler(ctx)('/tui-module-smoke warning')).toBe(true)
+
+    expect(ctx.gateway.rpc).not.toHaveBeenCalled()
+    expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
+    expect(getUiState().tuiModules.tui_smoke).toMatchObject({
+      enabled: true,
+      slot: 'transcript.live_tail'
+    })
+    expect(getTuiModuleState().snapshots.tui_smoke).toMatchObject({
+      state: 'warning',
+      summary: '模块有提醒',
+      title: 'TUI 模块烟测',
+      version: TUI_EXTENSION_VERSION
+    })
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('TUI 模块烟测: 模块有提醒')
+  })
+
+  it('clears /tui-module-smoke state locally', () => {
+    const ctx = buildCtx()
+    const h = createSlashHandler(ctx)
+
+    h('/tui-module-smoke ok')
+    expect(getTuiModuleState().snapshots.tui_smoke).toBeDefined()
+
+    expect(h('/tui-module-smoke clear')).toBe(true)
+
+    expect(getUiState().tuiModules.tui_smoke).toBeUndefined()
+    expect(getTuiModuleState().snapshots.tui_smoke).toBeUndefined()
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('TUI 模块烟测已清理')
+  })
+
+  it('rejects unknown /tui-module-smoke states before hitting the gateway', () => {
+    const ctx = buildCtx()
+
+    expect(createSlashHandler(ctx)('/tui-module-smoke blink')).toBe(true)
+    expect(ctx.gateway.rpc).not.toHaveBeenCalled()
+    expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
+    expect(ctx.transcript.sys).toHaveBeenCalledWith(
+      '用法: /tui-module-smoke [ok|loading|warning|stale|error|disabled|incompatible|clear]'
+    )
   })
 
   it('exits locally for /quit', () => {

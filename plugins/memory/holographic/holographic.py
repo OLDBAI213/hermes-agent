@@ -20,24 +20,32 @@ References:
 """
 
 import hashlib
+import importlib.util
 import logging
 import struct
 import math
 
-try:
-    import numpy as np
-    _HAS_NUMPY = True
-except ImportError:
-    _HAS_NUMPY = False
+np = None
+_HAS_NUMPY = importlib.util.find_spec("numpy") is not None
 
 logger = logging.getLogger(__name__)
 
 _TWO_PI = 2.0 * math.pi
 
 
-def _require_numpy() -> None:
+def _require_numpy():
+    global np, _HAS_NUMPY
+    if np is not None:
+        return np
     if not _HAS_NUMPY:
         raise RuntimeError("numpy is required for holographic operations")
+    try:
+        import numpy as _np
+    except ImportError as exc:
+        _HAS_NUMPY = False
+        raise RuntimeError("numpy is required for holographic operations") from exc
+    np = _np
+    return _np
 
 
 def encode_atom(word: str, dim: int = 1024) -> "np.ndarray":
@@ -52,7 +60,7 @@ def encode_atom(word: str, dim: int = 1024) -> "np.ndarray":
     - Truncate to dim elements
     - Returns np.float64 array of shape (dim,)
     """
-    _require_numpy()
+    numpy = _require_numpy()
 
     # Each SHA-256 digest is 32 bytes = 16 uint16 values.
     values_per_block = 16
@@ -63,7 +71,7 @@ def encode_atom(word: str, dim: int = 1024) -> "np.ndarray":
         digest = hashlib.sha256(f"{word}:{i}".encode()).digest()
         uint16_values.extend(struct.unpack("<16H", digest))
 
-    phases = np.array(uint16_values[:dim], dtype=np.float64) * (_TWO_PI / 65536.0)
+    phases = numpy.array(uint16_values[:dim], dtype=numpy.float64) * (_TWO_PI / 65536.0)
     return phases
 
 
@@ -93,9 +101,9 @@ def bundle(*vectors: "np.ndarray") -> "np.ndarray":
     Bundling merges multiple vectors into one that is similar to each input.
     The result can hold O(sqrt(dim)) items before similarity degrades.
     """
-    _require_numpy()
-    complex_sum = np.sum([np.exp(1j * v) for v in vectors], axis=0)
-    return np.angle(complex_sum) % _TWO_PI
+    numpy = _require_numpy()
+    complex_sum = numpy.sum([numpy.exp(1j * v) for v in vectors], axis=0)
+    return numpy.angle(complex_sum) % _TWO_PI
 
 
 def similarity(a: "np.ndarray", b: "np.ndarray") -> float:
@@ -104,8 +112,8 @@ def similarity(a: "np.ndarray", b: "np.ndarray") -> float:
     Returns 1.0 for identical vectors, near 0.0 for random (unrelated) vectors,
     and -1.0 for perfectly anti-correlated vectors.
     """
-    _require_numpy()
-    return float(np.mean(np.cos(a - b)))
+    numpy = _require_numpy()
+    return float(numpy.mean(numpy.cos(a - b)))
 
 
 def encode_text(text: str, dim: int = 1024) -> "np.ndarray":
@@ -150,7 +158,7 @@ def encode_fact(content: str, entities: list[str], dim: int = 1024) -> "np.ndarr
     role_content = encode_atom("__hrr_role_content__", dim)
     role_entity = encode_atom("__hrr_role_entity__", dim)
 
-    components: list[np.ndarray] = [
+    components = [
         bind(encode_text(content, dim), role_content)
     ]
 
@@ -172,8 +180,8 @@ def bytes_to_phases(data: bytes) -> "np.ndarray":
     The .copy() call is required because frombuffer returns a read-only view
     backed by the bytes object; callers expect a mutable array.
     """
-    _require_numpy()
-    return np.frombuffer(data, dtype=np.float64).copy()
+    numpy = _require_numpy()
+    return numpy.frombuffer(data, dtype=numpy.float64).copy()
 
 
 def snr_estimate(dim: int, n_items: int) -> float:

@@ -47,6 +47,10 @@ class TestSupportsMediaInToolResults:
     def test_openai_codex_yes(self):
         assert _supports_media_in_tool_results("openai-codex", "gpt-5-codex") is True
 
+    def test_xiaomi_mimo_yes(self):
+        assert _supports_media_in_tool_results("xiaomi", "mimo-v2.5") is True
+        assert _supports_media_in_tool_results("xiaomi", "mimo-v2.5-pro") is True
+
     def test_gemini_3_yes(self):
         assert _supports_media_in_tool_results("google", "gemini-3-flash-preview") is True
 

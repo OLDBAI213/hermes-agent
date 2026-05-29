@@ -41,6 +41,9 @@ class TestEnrichMessageWithVision:
         with patch("tools.vision_tools.vision_analyze_tool", new=AsyncMock(return_value=fake_result)):
             out = _run(gateway_runner._enrich_message_with_vision("caption", ["/tmp/img.jpg"]))
         assert "sunset over the ocean" in out
+        assert "用户发送了一张图片" in out
+        assert "The user sent an image" not in out
+        assert "vision_analyze with image_url" not in out
 
     def test_memory_context_fence_stripped(self, gateway_runner):
         """<memory-context>...</memory-context> fenced block is scrubbed."""

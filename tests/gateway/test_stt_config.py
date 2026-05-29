@@ -52,9 +52,9 @@ async def test_enrich_message_with_transcription_surfaces_path_when_stt_disabled
             ["/tmp/voice.ogg"],
         )
 
-    assert "/tmp/voice.ogg" in result
-    assert "voice message" in result.lower()
-    assert "(duration: 0:12)" in result
+    assert "voice.ogg" in result
+    assert "语音消息" in result
+    assert "（时长：0:12）" in result
     assert "caption" in result
 
 
@@ -74,8 +74,8 @@ async def test_enrich_message_with_transcription_omits_duration_on_probe_failure
             ["/tmp/voice.ogg"],
         )
 
-    assert "/tmp/voice.ogg" in result
-    assert "duration" not in result.lower()
+    assert "voice.ogg" in result
+    assert "时长" not in result
 
 
 @pytest.mark.asyncio
@@ -94,8 +94,8 @@ async def test_enrich_message_with_transcription_avoids_bogus_no_provider_messag
             ["/tmp/voice.ogg"],
         )
 
-    assert "No STT provider is configured" not in result
-    assert "trouble transcribing" in result
+    assert "没有配置语音转文字服务" not in result
+    assert "转写失败" in result
     assert "caption" in result
 
 
@@ -139,4 +139,4 @@ async def test_prepare_inbound_message_text_transcribes_queued_voice_event():
 
     assert result is not None
     assert "queued voice transcript" in result
-    assert "voice message" in result.lower()
+    assert "语音消息" in result

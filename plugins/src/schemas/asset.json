@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SRC Suite 资产",
+  "description": "一个资产 = 一条记录，落在 runs/src/<task_id>/assets/*.json",
+  "type": "object",
+  "required": ["asset_id", "task_id", "kind", "value", "discovered_by", "discovered_at"],
+  "properties": {
+    "asset_id":       {"type": "string", "description": "稳定哈希：sha1(kind+value) 前 16 位"},
+    "task_id":        {"type": "string", "description": "所属任务编号"},
+    "kind":           {"enum": ["domain","subdomain","ip","url","port","tech","endpoint","secret","js_url","wxapkg","apk"], "description": "资产类型"},
+    "value":          {"type": "string", "description": "资产本体（如子域名字符串）"},
+    "parent_asset":   {"type": ["string","null"], "description": "上一级资产 id，构资产树"},
+    "discovered_by":  {"type": "string", "description": "发现工具名（subfinder/httpx/...）"},
+    "discovered_at":  {"type": "string", "format": "date-time", "description": "发现时间 ISO8601"},
+    "meta":           {"type": "object", "additionalProperties": true, "description": "工具特有附加信息（如 httpx 的 status_code）"},
+    "tags":           {"type": "array", "items": {"type": "string"}, "description": "标签（如 'api','admin','sensitive'）"}
+  }
+}

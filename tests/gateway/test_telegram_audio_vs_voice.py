@@ -76,7 +76,7 @@ async def test_voice_message_still_transcribed():
 
     mock_transcribe.assert_called_once_with("/tmp/voice.ogg")
     assert "hello world" in result
-    assert "voice message" in result.lower()
+    assert "语音消息" in result
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +106,7 @@ async def test_audio_attachment_skips_stt():
 
     assert result is not None
     assert "/tmp/song.mp3" in result
-    assert "audio file attachment" in result.lower()
+    assert "音频文件附件" in result
 
 
 @pytest.mark.asyncio
@@ -131,9 +131,9 @@ async def test_audio_attachment_context_note_format():
             )
 
     assert "my_song.mp3" in result
-    assert "audio file attachment" in result.lower()
+    assert "音频文件附件" in result
     # Should NOT contain the voice-message transcription wrapper text
-    assert "voice message" not in result.lower()
+    assert "语音消息" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +163,7 @@ async def test_audio_attachment_skips_stt_when_stt_disabled():
 
     # Should NOT see the "transcription is disabled" note — that's only for VOICE
     assert "transcription is disabled" not in result.lower()
-    assert "audio file attachment" in result.lower()
+    assert "音频文件附件" in result
     assert "/tmp/podcast.m4a" in result
 
 

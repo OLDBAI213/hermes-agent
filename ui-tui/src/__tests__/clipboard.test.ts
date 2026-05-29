@@ -14,11 +14,29 @@ describe('readClipboardText', () => {
     )
   })
 
-  it('reads text from PowerShell on Windows', async () => {
+  it('reads text from pwsh first on Windows', async () => {
     const run = vi.fn().mockResolvedValue({ stdout: 'from windows\r\n' })
 
     await expect(readClipboardText('win32', run)).resolves.toBe('from windows\r\n')
     expect(run).toHaveBeenCalledWith(
+      'pwsh',
+      ['-NoProfile', '-NonInteractive', '-Command', 'Get-Clipboard -Raw'],
+      expect.objectContaining({ encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, windowsHide: true })
+    )
+  })
+
+  it('falls back to Windows PowerShell when pwsh is unavailable', async () => {
+    const run = vi.fn().mockRejectedValueOnce(new Error('pwsh missing')).mockResolvedValueOnce({ stdout: 'fallback\r\n' })
+
+    await expect(readClipboardText('win32', run)).resolves.toBe('fallback\r\n')
+    expect(run).toHaveBeenNthCalledWith(
+      1,
+      'pwsh',
+      ['-NoProfile', '-NonInteractive', '-Command', 'Get-Clipboard -Raw'],
+      expect.objectContaining({ encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, windowsHide: true })
+    )
+    expect(run).toHaveBeenNthCalledWith(
+      2,
       'powershell',
       ['-NoProfile', '-NonInteractive', '-Command', 'Get-Clipboard -Raw'],
       expect.objectContaining({ encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, windowsHide: true })
@@ -303,7 +321,7 @@ describe('writeClipboardText', () => {
     expect(stdin.end).toHaveBeenCalledWith('wslg text')
   })
 
-  it('uses PowerShell on Windows', async () => {
+  it('uses pwsh first on Windows', async () => {
     const stdin = { end: vi.fn() }
 
     const child = {
@@ -321,6 +339,39 @@ describe('writeClipboardText', () => {
 
     await expect(writeClipboardText('windows text', 'win32', start as any)).resolves.toBe(true)
     expect(start).toHaveBeenCalledWith(
+      'pwsh',
+      expect.arrayContaining(['-NoProfile', '-NonInteractive']),
+      expect.anything()
+    )
+  })
+
+  it('falls back to Windows PowerShell when pwsh copy fails', async () => {
+    let callCount = 0
+    const stdin = { end: vi.fn() }
+
+    const child = {
+      once: vi.fn((event: string, cb: (code?: number) => void) => {
+        if (event === 'close') {
+          callCount++
+          cb(callCount === 1 ? 1 : 0)
+        }
+
+        return child
+      }),
+      stdin
+    }
+
+    const start = vi.fn().mockReturnValue(child)
+
+    await expect(writeClipboardText('windows text', 'win32', start as any)).resolves.toBe(true)
+    expect(start).toHaveBeenNthCalledWith(
+      1,
+      'pwsh',
+      expect.arrayContaining(['-NoProfile', '-NonInteractive']),
+      expect.anything()
+    )
+    expect(start).toHaveBeenNthCalledWith(
+      2,
       'powershell',
       expect.arrayContaining(['-NoProfile', '-NonInteractive']),
       expect.anything()

@@ -13,6 +13,7 @@ sys.path = [p for p in sys.path if p not in {"", "."}]
 
 import json
 import signal
+import threading
 import time
 import traceback
 
@@ -184,37 +185,48 @@ def _log_exit(reason: str) -> None:
     print(f"[gateway-exit] {reason}", file=sys.stderr, flush=True)
 
 
-def main():
-    _install_sidecar_publisher()
-
-    # MCP tool discovery — inline is safe here: TUI entry is a plain
-    # sync loop with no asyncio event loop to block.  Previously ran as
-    # a model_tools.py module-level side effect; moved to explicit
-    # startup calls to avoid freezing the gateway's loop on lazy import
-    # (#16856).
-    #
-    # Cold-start guard: importing ``tools.mcp_tool`` transitively pulls the
-    # full MCP SDK (mcp, pydantic, httpx, jsonschema, starlette parsers —
-    # ~200ms on macOS), which runs on the TUI's critical path before
-    # ``gateway.ready`` can be emitted.  The overwhelming majority of users
-    # have no ``mcp_servers`` configured, in which case every byte of that
-    # import is wasted.  Check the config first (cheap — it's already been
-    # loaded once by ``_config_mtime`` elsewhere) and only pay the import
-    # cost when there's actually MCP work to do.
+def _should_discover_mcp_tools() -> bool:
+    # Keep the ready path cheap: most TUI launches have no MCP servers, and
+    # importing the MCP stack just to discover "nothing" is visible startup cost.
     try:
         from hermes_cli.config import read_raw_config
-        _mcp_servers = (read_raw_config() or {}).get("mcp_servers")
-        _has_mcp_servers = isinstance(_mcp_servers, dict) and len(_mcp_servers) > 0
+
+        mcp_servers = (read_raw_config() or {}).get("mcp_servers")
+        return isinstance(mcp_servers, dict) and len(mcp_servers) > 0
     except Exception:
-        # Be conservative: if we can't decide, fall back to the old
-        # behaviour and let the discovery path handle its own errors.
-        _has_mcp_servers = True
-    if _has_mcp_servers:
+        return True
+
+
+def _run_mcp_discovery_background() -> None:
+    try:
+        from tools.mcp_tool import discover_mcp_tools
+
+        discover_mcp_tools()
+        server.refresh_mcp_tools_for_sessions()
+    except Exception:
         try:
-            from tools.mcp_tool import discover_mcp_tools
-            discover_mcp_tools()
+            os.makedirs(os.path.dirname(_CRASH_LOG), exist_ok=True)
+            with open(_CRASH_LOG, "a", encoding="utf-8") as f:
+                f.write(
+                    f"\n=== background MCP discovery failed · "
+                    f"{time.strftime('%Y-%m-%d %H:%M:%S')} ===\n"
+                )
+                f.write(traceback.format_exc())
         except Exception:
             pass
+
+
+def _start_mcp_discovery_background() -> None:
+    thread = threading.Thread(
+        target=_run_mcp_discovery_background,
+        name="tui-mcp-discovery",
+        daemon=True,
+    )
+    thread.start()
+
+
+def main():
+    _install_sidecar_publisher()
 
     if not write_json({
         "jsonrpc": "2.0",
@@ -223,6 +235,9 @@ def main():
     }):
         _log_exit("startup write failed (broken stdout pipe before first event)")
         sys.exit(0)
+
+    if _should_discover_mcp_tools():
+        _start_mcp_discovery_background()
 
     for raw in sys.stdin:
         line = raw.strip()

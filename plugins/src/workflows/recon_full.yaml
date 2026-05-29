@@ -1,0 +1,35 @@
+name: recon_full
+description: 全链路子域侦察（subfinder → httpx 存活+指纹 → katana 爬取 + naabu 端口）
+version: "1.0"
+steps:
+  - id: subdomains
+    verb: recon.subdomains
+    params:
+      target: "{{target}}"
+    on_fail: stop
+    next_hint: "子域收集完毕，跑存活检测"
+
+  - id: alive
+    verb: recon.alive
+    depends_on: [subdomains]
+    params:
+      subdomains: "{{steps.subdomains.subdomains}}"
+    on_fail: skip
+    next_hint: "存活主机已确认，并发跑爬取+端口"
+
+  - id: ports
+    verb: recon.ports
+    depends_on: [alive]
+    params:
+      target: "{{steps.alive.alive_hosts}}"
+      ports: "top-100"
+    on_fail: skip
+    next_hint: "端口扫描完毕，可看高危端口"
+
+  - id: crawl
+    verb: recon.crawl
+    depends_on: [alive]
+    params:
+      target: "{{steps.alive.alive_urls}}"
+    on_fail: skip
+    next_hint: "endpoint 收集完毕，可进 scan 阶段"

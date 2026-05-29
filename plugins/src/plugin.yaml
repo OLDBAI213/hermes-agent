@@ -1,0 +1,9 @@
+name: src-suite
+version: 0.0.1
+description: "SRC Suite — 大一统 SRC 工作流：recon/browse/scan/exploit/mobile/report 六动词 + journal + playbook + 硬门。AI-first，本机原生工具优先，容器化可选。"
+author: OLDBAI
+kind: application
+status: active
+stage: P1
+provides_facade:
+  - srcsuite

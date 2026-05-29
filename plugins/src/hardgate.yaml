@@ -1,0 +1,41 @@
+# SRC Suite 硬门规则 — AI-first YAML
+# action: ask_oldbai（暂停等老白确认）| abort（立即终止）
+# facade 每次调用前 hardgate.check_pre()，post-call 时 hardgate.check_post()
+
+- id: hg_001_other_user_pii
+  description: 响应中检测到非自己账号的 PII（身份证/真实姓名）
+  triggers:
+    - kind: response_contains_pii
+      fields: [id_card, real_name]
+  action: ask_oldbai
+  reason: 越权/公民数据触碰
+
+- id: hg_002_destructive_sqlmap
+  description: sqlmap 危险开关（os-shell/dump/passwords/sql-shell）
+  triggers:
+    - tool: sqlmap
+      args_contain: ["--os-shell", "--dump", "--passwords", "--sql-shell"]
+  action: abort
+  reason: 破坏性操作，不允许 AI 自主执行
+
+- id: hg_003_submit_action
+  description: 任何 SRC 平台提交动作
+  triggers:
+    - tool: [platform.submit]
+  action: ask_oldbai
+  reason: 提交漏洞必须老白审核确认
+
+- id: hg_004_admin_destructive_verb
+  description: POST 到管理员破坏性路径（/admin/delete /reset /shutdown /drop）
+  triggers:
+    - method: POST
+      path_matches: ["/admin/delete", "/admin/reset", "/admin/shutdown", "/drop", "/truncate"]
+  action: ask_oldbai
+  reason: 管理员破坏性操作，不允许 AI 自主执行
+
+- id: hg_005_outside_scope
+  description: 目标不在任务 in-scope 范围内
+  triggers:
+    - kind: target_not_in_scope
+  action: abort
+  reason: 越权测试，不允许 AI 自主扩大测试范围

@@ -478,9 +478,12 @@ def detect_local_server_type(base_url: str, api_key: str = "") -> Optional[str]:
         server_url = server_url[:-3]
 
     headers = _auth_headers(api_key)
+    client_kwargs = {"timeout": 2.0, "headers": headers}
+    if is_local_endpoint(base_url):
+        client_kwargs["trust_env"] = False
 
     try:
-        with httpx.Client(timeout=2.0, headers=headers) as client:
+        with httpx.Client(**client_kwargs) as client:
             # LM Studio exposes /api/v1/models — check first (most specific)
             try:
                 r = client.get(f"{server_url}/api/v1/models")
@@ -1021,9 +1024,12 @@ def query_ollama_num_ctx(model: str, base_url: str, api_key: str = "") -> Option
         return None
 
     headers = _auth_headers(api_key)
+    client_kwargs = {"timeout": 3.0, "headers": headers}
+    if is_local_endpoint(base_url):
+        client_kwargs["trust_env"] = False
 
     try:
-        with httpx.Client(timeout=3.0, headers=headers) as client:
+        with httpx.Client(**client_kwargs) as client:
             resp = client.post(f"{server_url}/api/show", json={"name": bare_model})
             if resp.status_code != 200:
                 return None
@@ -1077,9 +1083,12 @@ def _query_ollama_api_show(model: str, base_url: str, api_key: str = "") -> Opti
         server_url = server_url[:-3]
 
     headers = _auth_headers(api_key)
+    client_kwargs = {"timeout": 5.0, "headers": headers}
+    if is_local_endpoint(base_url):
+        client_kwargs["trust_env"] = False
 
     try:
-        with httpx.Client(timeout=5.0, headers=headers) as client:
+        with httpx.Client(**client_kwargs) as client:
             resp = client.post(f"{server_url}/api/show", json={"name": model})
             if resp.status_code != 200:
                 return None
@@ -1138,6 +1147,9 @@ def _query_local_context_length(model: str, base_url: str, api_key: str = "") ->
         server_url = server_url[:-3]
 
     headers = _auth_headers(api_key)
+    client_kwargs = {"timeout": 3.0, "headers": headers}
+    if is_local_endpoint(base_url):
+        client_kwargs["trust_env"] = False
 
     try:
         server_type = detect_local_server_type(base_url, api_key=api_key)
@@ -1145,7 +1157,7 @@ def _query_local_context_length(model: str, base_url: str, api_key: str = "") ->
         server_type = None
 
     try:
-        with httpx.Client(timeout=3.0, headers=headers) as client:
+        with httpx.Client(**client_kwargs) as client:
             # Ollama: /api/show returns model details with context info
             if server_type == "ollama":
                 resp = client.post(f"{server_url}/api/show", json={"name": model})
@@ -1572,6 +1584,13 @@ def get_model_context_length(
         except ImportError:
             pass  # boto3 not installed — fall through to generic resolution
 
+    effective_provider = provider
+    if not effective_provider or effective_provider in {"openrouter", "custom"}:
+        if base_url:
+            inferred = _infer_provider_from_url(base_url)
+            if inferred:
+                effective_provider = inferred
+
     if provider == "novita" or (base_url and base_url_host_matches(base_url, "api.novita.ai")):
         ctx = _resolve_endpoint_context_length(model, base_url or "https://api.novita.ai/openai/v1", api_key=api_key)
         if ctx is not None:
@@ -1603,13 +1622,24 @@ def get_model_context_length(
                     if provider != "lmstudio":
                         save_context_length(model, base_url, local_ctx)
                     return local_ctx
+            # Some OpenAI-compatible gateways expose ``/models`` but omit
+            # ``context_length`` entirely.  Falling straight to the generic
+            # 256K probe-down default loses better provider/model heuristics
+            # later in this function (for example ``gpt-5.5`` should still
+            # resolve to ~1.05M when the gateway only returns bare model IDs).
             logger.info(
-                "Could not detect context length for model %r at %s — "
-                "defaulting to %s tokens (probe-down). Set model.context_length "
-                "in config.yaml to override.",
+                "Could not detect context length for model %r at %s from live endpoint metadata; "
+                "continuing to provider/model fallbacks before using the default %s-token probe-down value.",
                 model, base_url, f"{DEFAULT_FALLBACK_CONTEXT:,}",
             )
-            return DEFAULT_FALLBACK_CONTEXT
+            if not effective_provider:
+                logger.info(
+                    "No provider could be inferred for custom endpoint %s — "
+                    "using the default %s-token probe-down fallback.",
+                    base_url,
+                    f"{DEFAULT_FALLBACK_CONTEXT:,}",
+                )
+                return DEFAULT_FALLBACK_CONTEXT
 
     # 4. Anthropic /v1/models API (only for regular API keys, not OAuth)
     if provider == "anthropic" or (
@@ -1626,13 +1656,6 @@ def get_model_context_length(
     # since the same model can have different context limits per provider
     # (e.g. claude-opus-4.6 is 1M on Anthropic but 128K on GitHub Copilot).
     # If provider is generic (openrouter/custom/empty), try to infer from URL.
-    effective_provider = provider
-    if not effective_provider or effective_provider in {"openrouter", "custom"}:
-        if base_url:
-            inferred = _infer_provider_from_url(base_url)
-            if inferred:
-                effective_provider = inferred
-
     # 5a. Copilot live /models API — max_prompt_tokens from the user's account.
     # This catches account-specific models (e.g. claude-opus-4.6-1m) that
     # don't exist in models.dev. For models that ARE in models.dev, this

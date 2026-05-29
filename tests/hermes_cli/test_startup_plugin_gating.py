@@ -32,6 +32,7 @@ from hermes_cli.main import (
     _BUILTIN_SUBCOMMANDS,
     _first_positional_argv,
     _plugin_cli_discovery_needed,
+    _tui_fast_path_requested,
 )
 
 
@@ -139,6 +140,24 @@ def test_discovery_skipped_for_builtins(argv):
 def test_discovery_runs_for_unknown_positional(argv):
     with patch.object(sys, "argv", argv):
         assert _plugin_cli_discovery_needed() is True
+
+
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        (["hermes", "--tui"], True),
+        (["hermes", "-w", "--tui"], True),
+        (["hermes", "chat", "--tui"], True),
+        (["hermes", "--tui", "chat"], True),
+        (["hermes", "dashboard", "--tui"], False),
+        (["hermes", "--tui", "dashboard"], False),
+        (["hermes", "--tui", "--help"], False),
+        (["hermes", "--version", "--tui"], False),
+    ],
+)
+def test_tui_fast_path_requested_only_for_chat_tui(argv, expected):
+    with patch.object(sys, "argv", argv):
+        assert _tui_fast_path_requested() is expected
 
 
 # ── _BUILTIN_SUBCOMMANDS ↔ argparse registration parity ────────────────────

@@ -40,6 +40,9 @@ await build({
   // `render`. Bundling from source sidesteps that.
   alias: { '@hermes/ink': resolve(root, 'packages/hermes-ink/src/entry-exports.ts') },
   plugins: [stubDevtools],
+  // Keep third-party legal comments out of the executable bundle. With recent
+  // esbuild + React, EOF legal comment aggregation can emit malformed JS.
+  legalComments: 'linked',
   // Some transitive deps use CommonJS `require(...)` at runtime. ESM bundles
   // don't get a `require` binding automatically, so we inject one.
   banner: {

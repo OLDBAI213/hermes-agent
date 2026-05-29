@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SRC Suite 工作日志事件",
+  "description": "每个任务一份 journal.jsonl，一行一事件。AI-first：为 grep/jq/聚合优化，不为人类阅读优化（人看时按需 render 成 md）。",
+  "type": "object",
+  "required": ["ts", "task_id", "seq", "phase", "kind"],
+  "properties": {
+    "ts":         {"type": "string", "format": "date-time", "description": "事件时间 ISO8601"},
+    "task_id":    {"type": "string", "description": "任务编号"},
+    "seq":        {"type": "integer", "description": "单任务内单调递增，断点续作锚点"},
+    "phase":      {"enum": ["init","recon","browse","scan","exploit","mobile","report","evidence","hardgate","resume","end"], "description": "当前阶段（init=任务起步, recon=信息收集, browse=浏览交互, scan=扫描, exploit=利用验证, mobile=移动端, report=报告, evidence=证据, hardgate=硬门, resume=恢复, end=结束）"},
+    "kind":       {"enum": ["decision","tool_call","tool_result","thinking","finding","hardgate_trigger","hardgate_resolved","error","resume_state","summary"], "description": "事件类型（decision=AI 决策, tool_call=调工具, tool_result=工具结果, thinking=思路, finding=漏洞发现, hardgate_trigger=硬门触发, hardgate_resolved=硬门解除, error=出错, resume_state=恢复快照, summary=阶段总结）"},
+    "tool":       {"type": ["string","null"], "description": "工具名"},
+    "target":     {"type": ["string","null"], "description": "目标（域名/URL/IP）"},
+    "input":      {"type": ["object","null"], "description": "工具调用入参"},
+    "output":     {"type": ["object","null"], "description": "工具调用出参（摘要，大数据落 assets/evidence）"},
+    "asset_ids":  {"type": "array", "items": {"type": "string"}, "description": "相关资产 id 列表"},
+    "finding_id": {"type": ["string","null"], "description": "相关漏洞发现 id"},
+    "decision":   {"type": ["string","null"], "description": "AI 决策的中文描述（如 '优先扫 *.api 子域'）"},
+    "next":       {"type": "array", "items": {"type": "string"}, "description": "下一步候选动作，恢复时 AI 直接吃"},
+    "hardgate":   {"type": ["string","null"], "description": "命中的硬门规则 id"},
+    "status":     {"type": ["string","null"], "enum": [null, "ok","fail","awaiting_oldbai","aborted"], "description": "状态（ok=成功, fail=失败, awaiting_oldbai=等老白拍板, aborted=已中止）"},
+    "refs":       {"type": "array", "items": {"type": "string"}, "description": "引用的文件/资产 id"},
+    "err":        {"type": ["string","null"], "description": "错误信息（中文）"}
+  }
+}

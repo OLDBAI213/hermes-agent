@@ -91,11 +91,10 @@ $InstallStageProtocolVersion = 1
 
 function Write-Banner {
     Write-Host ""
-    Write-Host "+---------------------------------------------------------+" -ForegroundColor Magenta
-    Write-Host "|             * Hermes Agent Installer                    |" -ForegroundColor Magenta
-    Write-Host "+---------------------------------------------------------+" -ForegroundColor Magenta
-    Write-Host "|  An open source AI agent by Nous Research.              |" -ForegroundColor Magenta
-    Write-Host "+---------------------------------------------------------+" -ForegroundColor Magenta
+    Write-Host "=========================================================" -ForegroundColor Magenta
+    Write-Host "  Hermes Agent Windows 安装器" -ForegroundColor Magenta
+    Write-Host "  安装 Hermes、依赖和 TUI 入口" -ForegroundColor Magenta
+    Write-Host "=========================================================" -ForegroundColor Magenta
     Write-Host ""
 }
 
@@ -117,6 +116,37 @@ function Write-Warn {
 function Write-Err {
     param([string]$Message)
     Write-Host "[X] $Message" -ForegroundColor Red
+}
+
+function Resolve-PowerShellHost {
+    try {
+        $current = (Get-Process -Id $PID -ErrorAction SilentlyContinue).Path
+        if ($current -and (Test-Path $current)) {
+            return $current
+        }
+    } catch {
+        # Fall back to command/path probing below.
+    }
+
+    foreach ($name in @("pwsh", "powershell", "powershell.exe")) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($cmd -and $cmd.Source) {
+            return $cmd.Source
+        }
+    }
+
+    $systemRoot = $env:SystemRoot
+    if (-not $systemRoot) {
+        $systemRoot = $env:WINDIR
+    }
+    if ($systemRoot) {
+        $winPs = Join-Path $systemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+        if (Test-Path $winPs) {
+            return $winPs
+        }
+    }
+
+    return $null
 }
 
 # --- Ensure-mode helpers ---
@@ -256,18 +286,22 @@ function Install-Uv {
     $prevEAP = $ErrorActionPreference
     try {
         # Relax ErrorActionPreference around the nested astral installer.
-        # The astral installer (a separate `powershell -c "irm ... | iex"`)
+        # The astral installer (a separate PowerShell host running
+        # `irm ... | iex`)
         # writes download progress to stderr.  With $ErrorActionPreference
         # = "Stop" set at the top of this script, PowerShell wraps stderr
-        # lines from native commands (which `powershell -c` is, from our
-        # perspective) as ErrorRecord objects when captured via 2>&1, then
+        # lines from native commands as ErrorRecord objects when captured via 2>&1, then
         # throws a terminating exception on the first one -- even though
         # uv installs successfully and the child exits 0.  Same fix
         # pattern Test-Python uses for `uv python install`; verify success
         # via Test-Path on the expected binary afterwards, which is more
         # reliable than exit-code/stderr signal anyway.
         $ErrorActionPreference = "Continue"
-        powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex" 2>&1 | Out-Null
+        $psHost = Resolve-PowerShellHost
+        if (-not $psHost) {
+            throw "PowerShell host not found. Install PowerShell 7 or ensure powershell.exe is available."
+        }
+        & $psHost -NoProfile -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex" 2>&1 | Out-Null
         $ErrorActionPreference = $prevEAP
 
         # Find the installed binary
@@ -1942,56 +1976,58 @@ function Start-GatewayIfConfigured {
 
 function Write-Completion {
     Write-Host ""
-    Write-Host "+---------------------------------------------------------+" -ForegroundColor Green
-    Write-Host "|              [OK] Installation Complete!                |" -ForegroundColor Green
-    Write-Host "+---------------------------------------------------------+" -ForegroundColor Green
+    Write-Host "=========================================================" -ForegroundColor Green
+    Write-Host "  [OK] 安装完成" -ForegroundColor Green
+    Write-Host "=========================================================" -ForegroundColor Green
     Write-Host ""
     
     # Show file locations
-    Write-Host "* Your files:" -ForegroundColor Cyan
+    Write-Host "* 本机文件:" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "   Config:    " -NoNewline -ForegroundColor Yellow
+    Write-Host "   配置:      " -NoNewline -ForegroundColor Yellow
     Write-Host "$HermesHome\config.yaml"
-    Write-Host "   API Keys:  " -NoNewline -ForegroundColor Yellow
+    Write-Host "   密钥:      " -NoNewline -ForegroundColor Yellow
     Write-Host "$HermesHome\.env"
-    Write-Host "   Data:      " -NoNewline -ForegroundColor Yellow
+    Write-Host "   数据:      " -NoNewline -ForegroundColor Yellow
     Write-Host "$HermesHome\cron\, sessions\, logs\"
-    Write-Host "   Code:      " -NoNewline -ForegroundColor Yellow
+    Write-Host "   代码:      " -NoNewline -ForegroundColor Yellow
     Write-Host "$HermesHome\hermes-agent\"
     Write-Host ""
     
     Write-Host "---------------------------------------------------------" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "* Commands:" -ForegroundColor Cyan
+    Write-Host "* 常用入口:" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "   hermes              " -NoNewline -ForegroundColor Green
-    Write-Host "Start chatting"
+    Write-Host "普通终端对话"
+    Write-Host "   hermes --tui        " -NoNewline -ForegroundColor Green
+    Write-Host "TUI 对话界面（推荐）"
     Write-Host "   hermes setup        " -NoNewline -ForegroundColor Green
-    Write-Host "Configure API keys & settings"
+    Write-Host "配置模型、密钥和功能"
     Write-Host "   hermes config       " -NoNewline -ForegroundColor Green
-    Write-Host "View/edit configuration"
+    Write-Host "查看/修改配置"
     Write-Host "   hermes config edit  " -NoNewline -ForegroundColor Green
-    Write-Host "Open config in editor"
+    Write-Host "用编辑器打开配置"
     Write-Host "   hermes gateway      " -NoNewline -ForegroundColor Green
-    Write-Host "Start messaging gateway (Telegram, Discord, etc.)"
+    Write-Host "启动消息网关（Telegram、Discord 等）"
     Write-Host "   hermes update       " -NoNewline -ForegroundColor Green
-    Write-Host "Update to latest version"
+    Write-Host "更新到最新版本"
     Write-Host ""
     
     Write-Host "---------------------------------------------------------" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "[*] Restart your terminal for PATH changes to take effect" -ForegroundColor Yellow
+    Write-Host "[*] 如命令暂时不可用，请重开 PowerShell 窗口让 PATH 生效" -ForegroundColor Yellow
     Write-Host ""
     
     if (-not $HasNode) {
-        Write-Host "Note: Node.js could not be installed automatically." -ForegroundColor Yellow
-        Write-Host "Browser tools need Node.js. Install manually:" -ForegroundColor Yellow
+        Write-Host "提示: Node.js 未能自动安装。" -ForegroundColor Yellow
+        Write-Host "浏览器工具需要 Node.js，可手动安装:" -ForegroundColor Yellow
         Write-Host "  https://nodejs.org/en/download/" -ForegroundColor Yellow
         Write-Host ""
     }
     
     if (-not $HasRipgrep) {
-        Write-Host "Note: ripgrep (rg) was not installed. For faster file search:" -ForegroundColor Yellow
+        Write-Host "提示: ripgrep (rg) 未安装；安装后文件搜索会更快:" -ForegroundColor Yellow
         Write-Host "  winget install BurntSushi.ripgrep.MSVC" -ForegroundColor Yellow
         Write-Host ""
     }

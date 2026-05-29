@@ -315,9 +315,14 @@ def test_session_resume_returns_hydrated_messages(server, monkeypatch):
             ]
 
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
-    monkeypatch.setattr(server, "_make_agent", lambda sid, key, session_id=None: object())
-    monkeypatch.setattr(server, "_init_session", lambda sid, key, agent, history, cols=80: None)
-    monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "test/model"})
+    monkeypatch.setattr(
+        server,
+        "_make_agent",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("session.resume must not build the agent synchronously")
+        ),
+    )
+    monkeypatch.setattr(server, "_schedule_agent_build", lambda sid, delay=0.05: None)
 
     resp = server.handle_request(
         {
@@ -370,6 +375,49 @@ def test_cli_exec_blocked(server, argv):
 ])
 def test_cli_exec_allowed(server, argv):
     assert server._cli_exec_blocked(argv) is None
+
+
+def test_commands_catalog_localizes_tui_descriptions(server):
+    with patch("agent.skill_commands.scan_skill_commands", return_value={}):
+        resp = server.handle_request({
+            "id": "r-cat",
+            "method": "commands.catalog",
+            "params": {},
+        })
+
+    assert "error" not in resp
+    result = resp["result"]
+    pairs = dict(result["pairs"])
+    assert pairs["/help"].startswith("显示可用命令")
+    assert "Show available commands" not in pairs["/help"]
+    assert pairs["/compact"] == "切换紧凑显示模式"
+
+    category_names = [cat["name"] for cat in result["categories"]]
+    assert "信息" in category_names
+    assert "TUI" in category_names
+
+
+def test_complete_slash_localizes_visible_meta(server):
+    with patch("agent.skill_commands.get_skill_commands", return_value={}):
+        resp = server.handle_request({
+            "id": "r-complete",
+            "method": "complete.slash",
+            "params": {"text": "/help"},
+        })
+
+    assert "error" not in resp
+    items = resp["result"]["items"]
+    assert items[0]["meta"] == "显示可用命令"
+    assert "Show available commands" not in items[0]["meta"]
+
+    resp = server.handle_request({
+        "id": "r-details",
+        "method": "complete.slash",
+        "params": {"text": "/details"},
+    })
+    details_meta = {item["text"]: item["meta"] for item in resp["result"]["items"]}
+    assert details_meta[" hidden"] == "全局显示模式"
+    assert details_meta[" thinking"] == "单独设置分区显示"
 
 
 # ── slash.exec skill command interception ────────────────────────────

@@ -47,6 +47,62 @@ def _ra():
     return run_agent
 
 
+def _parse_positive_context_length(raw: Any) -> Optional[int]:
+    """Return a positive integer context length, or ``None`` when unset/invalid."""
+    if raw is None:
+        return None
+    try:
+        if isinstance(raw, bool):
+            return None
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def resolve_runtime_config_context_length(
+    model: str,
+    provider: str = "",
+    base_url: str = "",
+) -> Optional[int]:
+    """Resolve the explicit config.yaml context-length override for a runtime target."""
+    try:
+        from hermes_cli.config import (
+            get_compatible_custom_providers,
+            get_custom_provider_context_length,
+            load_config,
+        )
+        cfg = load_config() or {}
+    except Exception:
+        return None
+
+    target_model = str(model or "").strip()
+    target_provider = str(provider or "").strip().lower()
+    target_base_url = str(base_url or "").strip().rstrip("/")
+
+    model_cfg = cfg.get("model") if isinstance(cfg, dict) else {}
+    if isinstance(model_cfg, dict):
+        cfg_model = str(model_cfg.get("default") or "").strip()
+        cfg_provider = str(model_cfg.get("provider") or "").strip().lower()
+        cfg_base_url = str(model_cfg.get("base_url") or "").strip().rstrip("/")
+        provider_match = not cfg_provider or not target_provider or cfg_provider == target_provider
+        base_url_match = not cfg_base_url or not target_base_url or cfg_base_url == target_base_url
+        if target_model and cfg_model == target_model and provider_match and base_url_match:
+            parsed = _parse_positive_context_length(model_cfg.get("context_length"))
+            if parsed is not None:
+                return parsed
+
+    try:
+        custom_providers = get_compatible_custom_providers(cfg)
+        return get_custom_provider_context_length(
+            target_model,
+            target_base_url,
+            custom_providers,
+        )
+    except Exception:
+        return None
+
+
 
 def convert_to_trajectory_format(agent, messages: List[Dict[str, Any]], user_query: str, completed: bool) -> List[Dict[str, Any]]:
     """
@@ -2333,6 +2389,7 @@ def force_close_tcp_sockets(client: Any) -> int:
 
 
 __all__ = [
+    "resolve_runtime_config_context_length",
     "convert_to_trajectory_format",
     "sanitize_tool_call_arguments",
     "repair_message_sequence",

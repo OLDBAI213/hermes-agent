@@ -21,8 +21,8 @@ CACHE_PATH = get_hermes_home() / "sticker_cache.json"
 
 # Vision prompt for describing stickers -- kept concise to save tokens
 STICKER_VISION_PROMPT = (
-    "Describe this sticker in 1-2 sentences. Focus on what it depicts -- "
-    "character, action, emotion. Be concise and objective."
+    "请用中文用 1-2 句话描述这张贴纸。重点说明画面内容、角色、动作和情绪，"
+    "保持简洁、客观。"
 )
 
 
@@ -101,15 +101,15 @@ def build_sticker_injection(
     Build the warm-style injection text for a sticker description.
 
     Returns a string like:
-      [The user sent a sticker 😀 from "MyPack"~ It shows: "A cat waving" (=^.w.^=)]
+      [用户发送了一张贴纸 😀，来自贴纸包 "MyPack"。画面内容："一只猫在挥手" (=^.w.^=)]
     """
     context = ""
     if set_name and emoji:
-        context = f" {emoji} from \"{set_name}\""
+        context = f" {emoji}，来自贴纸包 \"{set_name}\""
     elif emoji:
         context = f" {emoji}"
 
-    return f"[The user sent a sticker{context}~ It shows: \"{description}\" (=^.w.^=)]"
+    return f"[用户发送了一张贴纸{context}。画面内容：\"{description}\" (=^.w.^=)]"
 
 
 def build_animated_sticker_injection(emoji: str = "") -> str:
@@ -118,7 +118,7 @@ def build_animated_sticker_injection(emoji: str = "") -> str:
     """
     if emoji:
         return (
-            f"[The user sent an animated sticker {emoji}~ "
-            f"I can't see animated ones yet, but the emoji suggests: {emoji}]"
+            f"[用户发送了一张动态贴纸 {emoji}。"
+            f"当前还不能查看动态贴纸内容，但表情提示可能是：{emoji}]"
         )
-    return "[The user sent an animated sticker~ I can't see animated ones yet]"
+    return "[用户发送了一张动态贴纸。当前还不能查看动态贴纸内容。]"

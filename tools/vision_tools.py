@@ -431,6 +431,8 @@ def _supports_media_in_tool_results(provider: str, model: str) -> bool:
         accepts an array of ``input_text``/``input_image`` items.
       * Gemini 3 (and proxied via aggregators): supports multimodal tool
         results. Older Gemini does NOT.
+      * Xiaomi MiMo multimodal endpoints used by Hermes accept OpenAI-style
+        tool-result image content on the chat-completions transport.
 
     For unknown / legacy providers we conservatively return False — the
     caller falls back to the legacy aux-LLM text path.
@@ -459,6 +461,14 @@ def _supports_media_in_tool_results(provider: str, model: str) -> bool:
     # OpenAI Chat Completions and Responses
     if p in {"openai", "openai-chat", "openai-codex", "azure-openai"}:
         return True
+
+    # Xiaomi MiMo is OpenAI-compatible in this Hermes profile. Keep this
+    # explicit so vision_analyze does not fall back to the auxiliary vision
+    # API when the active MiMo model is already multimodal.
+    if p in {"xiaomi", "mimo"}:
+        if not isinstance(model, str):
+            return False
+        return "mimo-v2.5" in model.strip().lower()
 
     # Gemini — gate on model name; older Gemini variants did not support
     # multimodal functionResponse. Gemini 3.x does.

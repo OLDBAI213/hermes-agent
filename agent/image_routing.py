@@ -15,6 +15,8 @@ Two modes:
 The decision is made once per message turn by :func:`decide_image_input_mode`.
 It reads ``agent.image_input_mode`` from config.yaml (``auto`` | ``native``
 | ``text``, default ``auto``) and the active model's capability metadata.
+Explicit ``native`` is authoritative because the local config may know about
+a multimodal provider before the cached capability registry does.
 
 In ``auto`` mode:
   - If the user has explicitly configured ``auxiliary.vision.provider``
