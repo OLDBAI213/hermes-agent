@@ -1469,10 +1469,14 @@ def switch_model(agent, new_model, new_provider, api_key='', base_url='', api_mo
     _snapshot["_client_kwargs"] = dict(getattr(agent, "_client_kwargs", {}) or {})
 
     try:
-        # Clear the per-config context_length override so the new model's
-        # actual context window is resolved via get_model_context_length()
-        # instead of inheriting the stale value from the previous model.
-        agent._config_context_length = None
+        # Re-resolve the new target's own explicit context-length override so we
+        # don't inherit the previous model's value while still preserving valid
+        # per-model config for the runtime we are switching onto.
+        agent._config_context_length = resolve_runtime_config_context_length(
+            new_model,
+            new_provider,
+            base_url or agent.base_url,
+        )
 
         # ── Swap core runtime fields ──
         agent.model = new_model
