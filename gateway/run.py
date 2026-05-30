@@ -10220,7 +10220,7 @@ class GatewayRunner:
                         _foot_adapter = self.adapters.get(source.platform)
                         if _foot_adapter:
                             # For Feishu, send footer as interactive card instead of plain text
-                            if source.platform == "feishu" and hasattr(_foot_adapter, "_build_outbound_card_payload"):
+                            if source.platform == "feishu":
                                 from gateway.platforms.feishu import _build_runtime_footer_card_payload
                                 _card_payload = _build_runtime_footer_card_payload(_footer_line)
                                 await _foot_adapter._feishu_send_with_retry(
@@ -17382,11 +17382,13 @@ class GatewayRunner:
 
             def _progress_text(lines: list) -> str:
                 if _feishu_zh_progress:
+                    count = len(lines)
                     numbered = [
                         f"{idx}. {str(line)}"
                         for idx, line in enumerate(lines, start=1)
                     ]
-                    return "🧰 工具调用记录\n" + "\n".join(numbered)
+                    header = f"🧰 工具调用记录 ({count}次)" if count > 0 else "🧰 工具调用记录"
+                    return header + "\n" + "\n".join(numbered)
                 return "\n".join(str(line) for line in lines)
 
             def _split_progress_groups(lines: list) -> list[list]:
