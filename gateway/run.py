@@ -997,9 +997,20 @@ _GATEWAY_COMMAND_CATEGORY_ZH = {
 }
 
 _GATEWAY_COMMAND_DESCRIPTION_ZH = {
+    "busy": "控制 Hermes 忙碌时 Enter 的处理方式",
+    "browser": "连接或查看 Chromium 系浏览器 CDP 工具",
+    "clear": "清屏并开始新会话",
+    "config": "显示当前配置",
+    "copy": "复制上一条助手回复到剪贴板",
+    "cron": "管理计划任务",
     "new": "开始新会话（新的会话 ID 和历史记录）",
     "topic": "启用或查看 Telegram 私聊主题会话",
+    "redraw": "强制重绘界面（修复终端漂移）",
+    "history": "显示对话历史",
+    "image": "为下一条提示附加本地图片",
+    "indicator": "选择 TUI 忙碌指示器样式",
     "retry": "重试上一条消息（重新发送给 Agent）",
+    "paste": "附加剪贴板图片",
     "undo": "撤销上一轮用户/助手对话",
     "title": "设置当前会话标题",
     "branch": "从当前会话创建分支，探索另一条路径",
@@ -1028,12 +1039,21 @@ _GATEWAY_COMMAND_DESCRIPTION_ZH = {
     "yolo": "切换 YOLO 模式（跳过危险命令确认）",
     "reasoning": "管理推理强度和推理显示",
     "fast": "切换快速模式（普通/快速）",
+    "platforms": "显示 gateway/消息平台状态",
     "voice": "切换语音模式",
+    "save": "保存当前对话",
     "bundles": "列出技能包（可用 /<name> 作为多个技能的别名）",
+    "skills": "浏览、查看、安装或审计技能",
+    "skin": "显示或切换显示皮肤/主题",
+    "statusbar": "切换上下文/模型状态栏",
+    "tools": "管理工具：/tools [list|disable|enable] [name...]",
+    "toolsets": "列出可用工具集",
     "curator": "后台技能维护（状态、运行、固定、归档、列出归档）",
     "kanban": "多配置档协作看板（任务、链接、评论）",
+    "reload": "把 .env 变量重新加载到当前会话",
     "reload-mcp": "从配置重新加载 MCP 服务器",
     "reload-skills": "重新扫描 Hermes skills 目录中的新增或移除技能",
+    "plugins": "列出已安装插件及状态",
     "commands": "浏览全部命令和技能（分页）",
     "help": "显示可用命令",
     "restart": "等待当前任务排空后平滑重启网关",
@@ -1042,6 +1062,7 @@ _GATEWAY_COMMAND_DESCRIPTION_ZH = {
     "platform": "暂停、恢复或列出故障的网关平台",
     "update": "将 Hermes Agent 更新到最新版本",
     "debug": "上传调试报告（系统信息和日志摘要）并获取分享链接",
+    "quit": "退出 CLI（可用 --delete 同时删除会话历史）",
 }
 
 
@@ -2079,7 +2100,23 @@ def _resolve_runtime_agent_kwargs() -> dict:
     except Exception as exc:
         raise RuntimeError(format_runtime_provider_error(exc)) from exc
 
-    return {
+    # Include context_length from config.yaml model.context_length
+    config_context_length = None
+    try:
+        import yaml as _y
+        cfg_path = _hermes_home / "config.yaml"
+        if cfg_path.exists():
+            with open(cfg_path, encoding="utf-8") as _f:
+                cfg = _y.safe_load(_f) or {}
+            model_cfg = cfg.get("model", {})
+            if isinstance(model_cfg, dict):
+                raw_ctx = model_cfg.get("context_length")
+                if raw_ctx is not None:
+                    config_context_length = int(raw_ctx)
+    except Exception:
+        pass
+
+    result = {
         "api_key": runtime.get("api_key"),
         "base_url": runtime.get("base_url"),
         "provider": runtime.get("provider"),
@@ -2088,6 +2125,9 @@ def _resolve_runtime_agent_kwargs() -> dict:
         "args": list(runtime.get("args") or []),
         "credential_pool": runtime.get("credential_pool"),
     }
+    if config_context_length is not None:
+        result["config_context_length"] = config_context_length
+    return result
 
 
 def _try_resolve_fallback_provider() -> dict | None:
@@ -2229,12 +2269,12 @@ def _dequeue_pending_event(adapter, session_key: str) -> MessageEvent | None:
     return adapter.get_pending_message(session_key)
 
 
-_INTERRUPT_REASON_STOP = "Stop requested"
-_INTERRUPT_REASON_RESET = "Session reset requested"
+_INTERRUPT_REASON_STOP = "已停止"
+_INTERRUPT_REASON_RESET = "会话已重置"
 _INTERRUPT_REASON_TIMEOUT = "Execution timed out (inactivity)"
 _INTERRUPT_REASON_SSE_DISCONNECT = "SSE client disconnected"
-_INTERRUPT_REASON_GATEWAY_SHUTDOWN = "Gateway shutting down"
-_INTERRUPT_REASON_GATEWAY_RESTART = "Gateway restarting"
+_INTERRUPT_REASON_GATEWAY_SHUTDOWN = "Gateway 正在关闭"
+_INTERRUPT_REASON_GATEWAY_RESTART = "Gateway 正在重启"
 
 _CONTROL_INTERRUPT_MESSAGES = frozenset(
     {
@@ -2341,8 +2381,8 @@ def _check_unavailable_skill(command_name: str) -> str | None:
                 # skills.disabled / skills.platform_disabled store).
                 if slug == normalized and declared_name in disabled:
                     return (
-                        f"The **{command_name}** skill is installed but disabled.\n"
-                        f"Enable it with: `hermes skills config`"
+                        f"**{command_name}** 技能已安装但被禁用。\n"
+                        f"使用 `hermes skills config` 启用"
                     )
 
         # Check optional skills (shipped with repo but not installed)
@@ -2362,8 +2402,8 @@ def _check_unavailable_skill(command_name: str) -> str | None:
                     parts = list(rel.parts)
                     install_path = f"official/{'/'.join(parts)}"
                     return (
-                        f"The **{command_name}** skill is available but not installed.\n"
-                        f"Install it with: `hermes skills install {install_path}`"
+                        f"**{command_name}** 技能可用但未安装。\n"
+                        f"使用 `hermes skills install {install_path}` 安装"
                     )
     except Exception:
         pass
@@ -5557,10 +5597,9 @@ class GatewayRunner:
         self._release_running_agent_state(session_key)
 
         synthetic_text = (
-            f"[Session was just handed off from CLI (\"{cli_title}\") to this "
-            f"channel. The full prior conversation history is loaded above. "
-            f"Briefly confirm you're working here and summarize what we were "
-            f"working on, so the user can continue from this device.]"
+            f"[会话刚从 CLI（\"{cli_title}\"）转交到这个消息渠道。"
+            f"上面的历史对话已经加载完成。请简短确认你正在这里继续工作，"
+            f"并概括刚才正在处理的事情，方便用户从当前设备无缝继续。]"
         )
 
         synthetic_event = MessageEvent(
@@ -8663,7 +8702,7 @@ class GatewayRunner:
         if canonical == "title":
             return await self._handle_title_command(event)
 
-        if canonical == "resume":
+        if canonical in {"resume", "sessions"}:
             return await self._handle_resume_command(event)
 
         if canonical == "branch":
@@ -10180,11 +10219,22 @@ class GatewayRunner:
                     try:
                         _foot_adapter = self.adapters.get(source.platform)
                         if _foot_adapter:
-                            await _foot_adapter.send(
-                                source.chat_id,
-                                _footer_line,
-                                metadata=self._thread_metadata_for_source(source, self._reply_anchor_for_event(event)),
-                            )
+                            # For Feishu, send footer as interactive card instead of plain text
+                            if source.platform == "feishu" and hasattr(_foot_adapter, "_build_outbound_card_payload"):
+                                from gateway.platforms.feishu import _build_runtime_footer_card_payload
+                                _card_payload = _build_runtime_footer_card_payload(_footer_line)
+                                await _foot_adapter._feishu_send_with_retry(
+                                    chat_id=source.chat_id,
+                                    msg_type="interactive",
+                                    payload=_card_payload,
+                                    reply_to=None, metadata=None,
+                                )
+                            else:
+                                await _foot_adapter.send(
+                                    source.chat_id,
+                                    _footer_line,
+                                    metadata=self._thread_metadata_for_source(source, self._reply_anchor_for_event(event)),
+                                )
                     except Exception as _e:
                         logger.debug("trailing footer send failed: %s", _e)
                 return None
@@ -10362,8 +10412,8 @@ class GatewayRunner:
             ctx_display = str(context_length)
 
         lines = [
-            f"◆ Model: `{model}`",
-            f"◆ Provider: {provider or 'openrouter'}",
+            f"◆ 模型: `{model}`",
+            f"◆ 服务商: {provider or 'openrouter'}",
             f"◆ Context: {ctx_display} tokens ({ctx_source})",
         ]
 
@@ -11187,10 +11237,9 @@ class GatewayRunner:
 
     async def _handle_help_command(self, event: MessageEvent) -> str:
         """Handle /help command - list available commands."""
-        from hermes_cli.commands import gateway_help_lines
         lines = [
             t("gateway.help.header"),
-            *gateway_help_lines(),
+            *_gateway_help_lines_for_event(event),
         ]
         try:
             from agent.skill_commands import get_skill_commands
@@ -11211,8 +11260,6 @@ class GatewayRunner:
         )
 
     async def _handle_commands_command(self, event: MessageEvent) -> str:
-        from hermes_cli.commands import gateway_help_lines
-
         raw_args = event.get_command_args().strip()
         if raw_args:
             try:
@@ -11223,7 +11270,7 @@ class GatewayRunner:
             requested_page = 1
 
         # Build combined entry list: built-in commands + skill commands
-        entries = list(gateway_help_lines())
+        entries = list(_gateway_help_lines_for_event(event))
         try:
             from agent.skill_commands import get_skill_commands
             skill_cmds = get_skill_commands()
@@ -11472,7 +11519,8 @@ class GatewayRunner:
 
             # Fallback: text list (for platforms without picker or if picker failed)
             provider_label = get_label(current_provider)
-            lines = [t("gateway.model.current_label", model=current_model or "unknown", provider=provider_label), ""]
+            unknown_model = "未知" if _is_feishu_zh_gateway_event(event) else "unknown"
+            lines = [t("gateway.model.current_label", model=current_model or unknown_model, provider=provider_label), ""]
 
             try:
                 providers = list_authenticated_providers(
@@ -11778,6 +11826,15 @@ class GatewayRunner:
         
         if not last_user_msg:
             return t("gateway.retry.no_previous")
+
+        retry_text, has_media = _retryable_text_from_user_content(last_user_msg)
+        if has_media:
+            return (
+                "/retry 不能可靠重放包含图片或附件的历史消息。"
+                "请重新发送图片/附件，或只发送文字后再试。"
+            )
+        if retry_text is None:
+            return t("gateway.retry.no_previous")
         
         # Truncate history to before the last user message and persist
         truncated = history[:last_user_idx]
@@ -11787,7 +11844,7 @@ class GatewayRunner:
         
         # Re-send by creating a fake text event with the old message
         retry_event = MessageEvent(
-            text=last_user_msg,
+            text=retry_text,
             message_type=MessageType.TEXT,
             source=source,
             raw_message=event.raw_message,
@@ -14296,6 +14353,36 @@ class GatewayRunner:
             if ctx.compression_count:
                 lines.append(t("gateway.usage.label_compressions", count=ctx.compression_count))
 
+            if source.platform == Platform.FEISHU:
+                compact = ["📊 用量"]
+                compact.append(f"模型: {agent.model}")
+                compact.append(
+                    f"本轮: 输入 {input_tokens:,} / 输出 {output_tokens:,} / 总计 {agent.session_total_tokens:,}"
+                )
+                if cache_read or cache_write:
+                    compact.append(f"缓存: 读 {cache_read:,} / 写 {cache_write:,}")
+                compact.append(f"调用: {agent.session_api_calls}")
+                try:
+                    if cost_result.amount_usd is not None:
+                        prefix = "~" if cost_result.status == "estimated" else ""
+                        compact[-1] += f"；成本: {prefix}${float(cost_result.amount_usd):.4f}"
+                    elif cost_result.status == "included":
+                        compact[-1] += "；成本: 已包含"
+                except Exception:
+                    pass
+                if ctx.last_prompt_tokens:
+                    compact.append(
+                        f"上下文: {ctx.last_prompt_tokens:,}/{ctx.context_length:,} ({pct:.0f}%)"
+                    )
+                if ctx.compression_count:
+                    compact[-1] += f"；压缩: {ctx.compression_count}"
+                if rl_state and rl_state.has_data:
+                    compact.append(f"限额: {format_rate_limit_compact(rl_state)}")
+                if account_lines:
+                    compact.append("")
+                    compact.extend(account_lines)
+                return "\n".join(compact)
+
             if account_lines:
                 lines.append("")
                 lines.extend(account_lines)
@@ -14309,6 +14396,17 @@ class GatewayRunner:
             from agent.model_metadata import estimate_messages_tokens_rough
             msgs = [m for m in history if m.get("role") in {"user", "assistant"} and m.get("content")]
             approx = estimate_messages_tokens_rough(msgs)
+            if source.platform == Platform.FEISHU:
+                lines = [
+                    "📊 会话",
+                    f"消息: {len(msgs)}",
+                    f"估算上下文: ~{approx:,}",
+                    "发送一条消息后可显示详细用量",
+                ]
+                if account_lines:
+                    lines.append("")
+                    lines.extend(account_lines)
+                return "\n".join(lines)
             lines = [
                 t("gateway.usage.header_session_info"),
                 t("gateway.usage.label_messages", count=len(msgs)),
@@ -14750,9 +14848,9 @@ class GatewayRunner:
             result = await execute()
             if choice == "always":
                 note = (
-                    "\n\nℹ️ Future /clear, /new, /reset, and /undo will run "
-                    "without confirmation. Re-enable via "
-                    "`approvals.destructive_slash_confirm: true` in config.yaml."
+                    "\n\nℹ️ 以后 /clear、/new、/reset 和 /undo 会直接执行，"
+                    "不再二次确认。如需恢复确认，请在 config.yaml 中设置 "
+                    "`approvals.destructive_slash_confirm: true`。"
                 )
                 if isinstance(result, str):
                     return result + note
@@ -14763,13 +14861,13 @@ class GatewayRunner:
             return result
 
         prompt_message = (
-            f"⚠️ **Confirm /{command}**\n\n"
+            f"⚠️ **确认 /{command}**\n\n"
             f"{detail}\n\n"
-            "Choose:\n"
-            "• **Approve Once** — proceed this time only\n"
-            "• **Always Approve** — proceed and silence this prompt permanently\n"
-            "• **Cancel** — keep current conversation\n\n"
-            "_Text fallback: reply `/approve`, `/always`, or `/cancel`._"
+            "请选择:\n"
+            "• **仅本次批准** - 只执行这一次\n"
+            "• **永久批准** - 执行，并以后不再提示\n"
+            "• **取消** - 保留当前会话\n\n"
+            "_文本备用方式: 回复 `/approve`、`/always` 或 `/cancel`。_"
         )
         return await self._request_slash_confirm(
             event=event,
@@ -15018,6 +15116,7 @@ class GatewayRunner:
         )
 
         loop = asyncio.get_running_loop()
+        report_label = "报告" if _is_feishu_zh_gateway_event(event) else "Report"
 
         # Run blocking I/O (dump capture, log reads, uploads) in a thread.
         def _collect_and_upload():
@@ -15027,7 +15126,7 @@ class GatewayRunner:
 
             urls = {}
             try:
-                urls["Report"] = upload_to_pastebin(report)
+                urls[report_label] = upload_to_pastebin(report)
             except Exception as exc:
                 return t("gateway.debug.upload_failed", error=exc)
 
@@ -15317,11 +15416,11 @@ class GatewayRunner:
                     exit_code_raw = exit_code_path.read_text().strip() or "1"
                     exit_code = int(exit_code_raw)
                     if exit_code == 0:
-                        await adapter.send(chat_id, "✅ Hermes update finished.", metadata=metadata)
+                        await adapter.send(chat_id, "✅ Hermes 更新完成。", metadata=metadata)
                     else:
                         await adapter.send(
                             chat_id,
-                            "❌ Hermes update failed (exit code {}).".format(exit_code),
+                            "❌ Hermes 更新失败（退出码 {}）。".format(exit_code),
                             metadata=metadata,
                         )
                     logger.info("Update finished (exit=%s), notified %s", exit_code, session_key)
@@ -15379,13 +15478,13 @@ class GatewayRunner:
                             except Exception as btn_err:
                                 logger.debug("Button-based update prompt failed: %s", btn_err)
                         if not sent_buttons:
-                            default_hint = f" (default: {default})" if default else ""
+                            default_hint = f"（默认值: {default}）" if default else ""
                             await adapter.send(
                                 chat_id,
-                                f"⚕ **Update needs your input:**\n\n"
+                                f"⚕ **更新需要你确认:**\n\n"
                                 f"{prompt_text}{default_hint}\n\n"
-                                f"Reply `/approve` (yes) or `/deny` (no), "
-                                f"or type your answer directly.",
+                                f"回复 `/approve`（是）或 `/deny`（否），"
+                                f"也可以直接输入你的回答。",
                                 metadata=metadata,
                             )
                         # Keep the prompt marker on disk until the user
@@ -15409,7 +15508,7 @@ class GatewayRunner:
             try:
                 await adapter.send(
                     chat_id,
-                    "❌ Hermes update timed out after 30 minutes.",
+                    "❌ Hermes 更新超过 30 分钟未完成，已超时。",
                     metadata=metadata,
                 )
             except Exception:
@@ -15482,13 +15581,13 @@ class GatewayRunner:
                     if len(output) > 3500:
                         output = "…" + output[-3500:]
                     if exit_code == 0:
-                        msg = f"✅ Hermes update finished.\n\n```\n{output}\n```"
+                        msg = f"✅ Hermes 更新完成。\n\n```\n{output}\n```"
                     else:
-                        msg = f"❌ Hermes update failed.\n\n```\n{output}\n```"
+                        msg = f"❌ Hermes 更新失败。\n\n```\n{output}\n```"
                 elif exit_code == 0:
-                    msg = "✅ Hermes update finished successfully."
+                    msg = "✅ Hermes 更新已成功完成。"
                 else:
-                    msg = "❌ Hermes update failed. Check the gateway logs or run `hermes update` manually for details."
+                    msg = "❌ Hermes 更新失败。请查看 gateway 日志，或在终端手动运行 `hermes update`。"
                 await adapter.send(chat_id, msg, metadata=metadata)
                 logger.info(
                     "Sent post-update notification to %s:%s (exit=%s)",
@@ -15542,7 +15641,7 @@ class GatewayRunner:
             metadata = {"thread_id": thread_id} if thread_id else None
             result = await adapter.send(
                 str(chat_id),
-                "♻ Gateway restarted successfully. Your session continues.",
+                "♻ Gateway 已重启成功，你的会话会继续保留。",
                 metadata=metadata,
             )
             # adapter.send() catches provider errors (e.g. "Chat not found")
@@ -17031,6 +17130,10 @@ class GatewayRunner:
         # Disable tool progress for webhooks - they don't support message editing,
         # so each progress line would be sent as a separate message.
         from gateway.config import Platform
+        _feishu_zh_progress = (
+            platform_key == "feishu"
+            and _zh_enabled_for_gateway(user_config, platform_key)
+        )
         tool_progress_enabled = progress_mode != "off" and source.platform != Platform.WEBHOOK
         # Natural assistant status messages are intentionally independent from
         # tool progress and token streaming. Users can keep tool_progress quiet
@@ -17278,6 +17381,12 @@ class GatewayRunner:
                 return await adapter.edit_message(**kwargs)
 
             def _progress_text(lines: list) -> str:
+                if _feishu_zh_progress:
+                    numbered = [
+                        f"{idx}. {str(line)}"
+                        for idx, line in enumerate(lines, start=1)
+                    ]
+                    return "🧰 工具调用记录\n" + "\n".join(numbered)
                 return "\n".join(str(line) for line in lines)
 
             def _split_progress_groups(lines: list) -> list[list]:
@@ -17426,10 +17535,15 @@ class GatewayRunner:
 
                     if can_edit and progress_msg_id is not None:
                         # Try to edit the existing progress message
-                        full_text = "\n".join(progress_lines)
+                        full_text = _progress_text(progress_lines)
                         result = await _edit_progress_message(progress_msg_id, full_text)
                         if not result.success:
                             _err = (getattr(result, "error", "") or "").lower()
+                            if platform_key == "feishu":
+                                logger.warning(
+                                    "[Feishu] Progress edit failed; suppressing standalone fallback line"
+                                )
+                                continue
                             # Transient network errors (ConnectError, timeouts)
                             # must not permanently disable progress-message
                             # editing — the next cycle can catch up.  Only
@@ -17466,7 +17580,7 @@ class GatewayRunner:
                     else:
                         if can_edit:
                             # First tool: send all accumulated text as new message
-                            full_text = "\n".join(progress_lines)
+                            full_text = _progress_text(progress_lines)
                             result = await adapter.send(
                                 chat_id=source.chat_id,
                                 content=full_text,
@@ -17474,6 +17588,8 @@ class GatewayRunner:
                                 metadata=_progress_metadata,
                             )
                         else:
+                            if platform_key == "feishu":
+                                continue
                             # Editing unsupported: send just this line
                             result = await adapter.send(
                                 chat_id=source.chat_id,
@@ -18030,15 +18146,9 @@ class GatewayRunner:
                 if _hm.get("role") in {"tool", "function"}:
                     _hc = _hm.get("content", "")
                     if "MEDIA:" in _hc:
-                        _TOOL_MEDIA_RE = re.compile(
-                            r'MEDIA:((?:/|~\/)\S+\.(?:png|jpe?g|gif|webp|'
-                            r'mp4|mov|avi|mkv|webm|ogg|opus|mp3|wav|m4a|'
-                            r'flac|epub|pdf|zip|rar|7z|docx?|xlsx?|pptx?|'
-                            r'txt|csv|apk|ipa))',
-                            re.IGNORECASE
-                        )
+                        from gateway.platforms.base import MEDIA_TAG_RE as _TOOL_MEDIA_RE
                         for _match in _TOOL_MEDIA_RE.finditer(_hc):
-                            _p = _match.group(1).strip().rstrip('",}')
+                            _p = _match.group("path").strip().strip("`\"'").rstrip('",}')
                             if _p:
                                 _history_media_paths.add(_p)
             
@@ -18071,7 +18181,7 @@ class GatewayRunner:
                 _status_adapter.pause_typing_for_chat(_status_chat_id)
 
                 cmd = approval_data.get("command", "")
-                desc = approval_data.get("description", "dangerous command")
+                desc = approval_data.get("description", "需要确认的命令")
 
                 # Prefer button-based approval when the adapter supports it.
                 # Check the *class* for the method, not the instance — avoids
@@ -18107,11 +18217,11 @@ class GatewayRunner:
                 # Fallback: plain text approval prompt
                 cmd_preview = cmd[:200] + "..." if len(cmd) > 200 else cmd
                 msg = (
-                    f"⚠️ **Dangerous command requires approval:**\n"
+                    f"⚠️ **需要确认命令:**\n"
                     f"```\n{cmd_preview}\n```\n"
-                    f"Reason: {desc}\n\n"
-                    f"Reply `/approve` to execute, `/approve session` to approve this pattern "
-                    f"for the session, `/approve always` to approve permanently, or `/deny` to cancel."
+                    f"原因: {desc}\n\n"
+                    f"回复 `/approve` 执行，`/approve session` 在本轮会话批准这类命令，"
+                    f"`/approve always` 永久批准，或回复 `/deny` 取消。"
                 )
                 try:
                     _approval_send_fut = safe_schedule_threadsafe(
@@ -18233,6 +18343,7 @@ class GatewayRunner:
                         _parts, _skipped = build_native_content_parts(
                             message,
                             _native_imgs,
+                            provider=getattr(agent, "provider", "") or "",
                         )
                         if _skipped:
                             logger.warning(
@@ -18336,15 +18447,9 @@ class GatewayRunner:
                     if msg.get("role") in {"tool", "function"}:
                         content = msg.get("content", "")
                         if "MEDIA:" in content:
-                            _TOOL_MEDIA_RE = re.compile(
-                                r'MEDIA:((?:/|~\/)\S+\.(?:png|jpe?g|gif|webp|'
-                                r'mp4|mov|avi|mkv|webm|ogg|opus|mp3|wav|m4a|'
-                                r'flac|epub|pdf|zip|rar|7z|docx?|xlsx?|pptx?|'
-                                r'txt|csv|apk|ipa))',
-                                re.IGNORECASE
-                            )
+                            from gateway.platforms.base import MEDIA_TAG_RE as _TOOL_MEDIA_RE
                             for match in _TOOL_MEDIA_RE.finditer(content):
-                                path = match.group(1).strip().rstrip('",}')
+                                path = match.group("path").strip().strip("`\"'").rstrip('",}')
                                 if path and path not in _history_media_paths:
                                     media_tags.append(f"MEDIA:{path}")
                             if "[[audio_as_voice]]" in content:
