@@ -1572,6 +1572,13 @@ class BasePlatformAdapter(ABC):
         self._topic_recovery_fn: Optional[Callable[[Any], Optional[str]]] = None
         self._running = False
         self._fatal_error_code: Optional[str] = None
+        # --- Self-heal data collection (Phase 0) ---
+        # Per-adapter inbound/outbound timestamps and counters.
+        # Used by AdaptiveHeartbeat, ConnectionQualityScorer, and /health/detailed.
+        self._last_inbound_ts: float = 0
+        self._last_outbound_ts: float = 0
+        self._inbound_count: int = 0
+        self._outbound_count: int = 0
         self._fatal_error_message: Optional[str] = None
         self._fatal_error_retryable = True
         self._fatal_error_handler: Optional[Callable[["BasePlatformAdapter"], Awaitable[None] | None]] = None
@@ -1736,6 +1743,40 @@ class BasePlatformAdapter(ABC):
         self._fatal_error_message = message
         self._fatal_error_retryable = retryable
         self._write_runtime_status_safe("fatal", platform_state="fatal", error_code=code, error_message=message)
+
+    # ------------------------------------------------------------------
+    # Self-heal data collection (Phase 0)
+    # ------------------------------------------------------------------
+
+    def _record_inbound(self) -> None:
+        """Update inbound timestamp and counter.  Call from the earliest
+        inbound event entry point in each adapter subclass."""
+        self._last_inbound_ts = time.time()
+        self._inbound_count += 1
+
+    def _record_outbound(self, success: bool = True) -> None:
+        """Update outbound timestamp and counter.  Call from ``send()``."""
+        if success:
+            self._last_outbound_ts = time.time()
+            self._outbound_count += 1
+
+    def health_stats(self) -> dict:
+        """Return a quick health summary dict for /health/detailed.
+
+        Subclasses may override to add platform-specific fields.
+        """
+        now = time.time()
+        return {
+            "platform": self.platform.value if hasattr(self.platform, "value") else str(self.platform),
+            "connected": self._running,
+            "fatal_error": self._fatal_error_code,
+            "last_inbound_ts": self._last_inbound_ts,
+            "last_inbound_ago": round(now - self._last_inbound_ts, 1) if self._last_inbound_ts else None,
+            "last_outbound_ts": self._last_outbound_ts,
+            "last_outbound_ago": round(now - self._last_outbound_ts, 1) if self._last_outbound_ts else None,
+            "inbound_count": self._inbound_count,
+            "outbound_count": self._outbound_count,
+        }
 
     def _write_runtime_status_safe(self, context: str, **kwargs) -> None:
         """Write runtime status; log first failure per context at warning, rest at debug.

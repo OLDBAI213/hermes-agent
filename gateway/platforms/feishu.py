@@ -1555,6 +1555,61 @@ def _strip_edge_self_mentions(
             return remaining
 
 
+def _bridge_ws_ping_pong(ws: Any, adapter: Any) -> None:
+    """Intercept websocket-client ping/pong callbacks for gateway metrics.
+
+    The lark_oapi SDK uses ``websockets`` library internally.  By wrapping
+    the WebSocket's ``ping``/``pong`` callbacks we can feed heartbeat
+    success/failure data into ``GatewayMetrics`` without modifying the SDK.
+
+    This is a best-effort bridge — if the websocket object's internal
+    structure changes, the monkey-patch simply doesn't apply.
+    """
+    try:
+        from gateway.metrics import GatewayMetrics
+        metrics = GatewayMetrics()
+
+        platform_label = {"platform": "feishu"}
+
+        # Track last pong timestamp on the adapter for health checks
+        def on_pong(data: Any = None) -> None:
+            try:
+                metrics.counter_inc("ws_pong_received", platform_label)
+                adapter._ws_last_pong_ts = time.time()
+            except Exception:
+                pass
+
+        def on_ping(data: Any = None) -> None:
+            try:
+                metrics.counter_inc("ws_ping_sent", platform_label)
+            except Exception:
+                pass
+
+        # websockets >= 11.x: WebSocket has ping_interval callbacks
+        # Wrap the socket's internal ping mechanism
+        if hasattr(ws, "pong") and callable(ws.pong):
+            _orig_pong = ws.pong
+
+            def _wrapped_pong(data: Any = None) -> None:
+                on_pong(data)
+                try:
+                    return _orig_pong(data)
+                except TypeError:
+                    return _orig_pong()
+
+            ws.pong = _wrapped_pong
+
+        # Store callbacks on adapter for metrics access
+        if not hasattr(adapter, "_ws_last_pong_ts"):
+            adapter._ws_last_pong_ts = 0.0
+        if not hasattr(adapter, "_ws_ping_sent_count"):
+            adapter._ws_ping_sent_count = 0
+
+        logger.debug("[Feishu] WebSocket ping/pong bridge installed")
+    except Exception:
+        logger.debug("[Feishu] Failed to install ping/pong bridge", exc_info=True)
+
+
 def _run_official_feishu_ws_client(ws_client: Any, adapter: Any) -> None:
     """Run the official Lark WS client in its own thread-local event loop."""
     import lark_oapi.ws.client as ws_client_module
@@ -1581,7 +1636,12 @@ def _run_official_feishu_ws_client(ws_client: Any, adapter: Any) -> None:
             kwargs["ping_interval"] = adapter._ws_ping_interval
         if adapter._ws_ping_timeout is not None and "ping_timeout" not in kwargs:
             kwargs["ping_timeout"] = adapter._ws_ping_timeout
-        return original_connect(*args, **kwargs)
+        ws = original_connect(*args, **kwargs)
+
+        # Phase 0.4: bridge WebSocket ping/pong to gateway metrics
+        _bridge_ws_ping_pong(ws, adapter)
+
+        return ws
 
     def _configure_with_overrides(conf: Any) -> Any:
         if original_configure is None:
@@ -1680,6 +1740,154 @@ def check_feishu_requirements() -> bool:
     return ensure_and_bind("platform.feishu", _import, globals(), prompt=False)
 
 
+# =========================================================================
+# Feishu Token Manager — Phase 0, task 0.3
+# =========================================================================
+
+class FeishuTokenManager:
+    """Manages Feishu tenant_access_token with proactive refresh.
+
+    The lark_oapi SDK manages its own token internally, but this manager
+    provides three additional capabilities the SDK does not:
+
+    1. **Proactive refresh** — renews the token *before* expiry so that
+       HTTP-fallback sends never hit a 99991668 (token expired) error.
+    2. **Status visibility** — exposes ``expires_in_secs`` and ``refresh_count``
+       for ``/health/detailed`` and metrics collection.
+    3. **Singleflight** — prevents concurrent refresh calls when multiple
+       coroutines request a token simultaneously.
+
+    Pattern adapted from ``qqbot/adapter.py::_ensure_token()``.
+    """
+
+    _TOKEN_URL_TEMPLATE = "https://{domain}/open-apis/auth/v3/tenant_access_token/internal"
+
+    def __init__(self, app_id: str, app_secret: str, domain: str = "feishu",
+                 refresh_ahead_secs: int = 300) -> None:
+        self._app_id = app_id
+        self._app_secret = app_secret
+        self._domain = domain
+        self._refresh_ahead_secs = refresh_ahead_secs
+        self._token: Optional[str] = None
+        self._expires_at: float = 0.0
+        self._lock = None  # created lazily when first asyncio loop is available
+        self._refresh_count: int = 0
+        self._last_refresh_error: Optional[str] = None
+
+    def _get_lock(self):
+        """Lazily create the asyncio lock on first use."""
+        if self._lock is None:
+            import asyncio
+            self._lock = asyncio.Lock()
+        return self._lock
+
+    def _base_url(self) -> str:
+        domains = {
+            "feishu": "open.feishu.cn",
+            "lark": "open.larksuite.com",
+        }
+        return domains.get(self._domain, "open.feishu.cn")
+
+    async def get_token(self) -> str:
+        """Return a valid token, refreshing proactively if needed.
+
+        Raises ``RuntimeError`` only when refresh fails AND no cached
+        token is available.
+        """
+        import asyncio
+        now = time.time()
+
+        # Fast path: token is valid and not close to expiry
+        if self._token and now < self._expires_at - self._refresh_ahead_secs:
+            return self._token
+
+        # Slow path: acquire lock and refresh
+        async with self._get_lock():
+            # Double-check after acquiring lock
+            if self._token and now < self._expires_at - self._refresh_ahead_secs:
+                return self._token
+
+            new_token_data = await self._fetch_new_token()
+            if new_token_data:
+                self._token = new_token_data.get("tenant_access_token", new_token_data.get("access_token", ""))
+                expire = int(new_token_data.get("expire", 7200))
+                self._expires_at = now + expire
+                self._refresh_count += 1
+                self._last_refresh_error = None
+                logger.info(
+                    "[feishu] TokenManager: refreshed (#{self._refresh_count}), "
+                    "expires in {expire}s"
+                )
+                return self._token
+
+            # Refresh failed — try to use cached token if still valid
+            if self._token and now < self._expires_at:
+                logger.warning(
+                    "[feishu] TokenManager: refresh failed, using cached token "
+                    "(expires in %.0fs)", self._expires_at - now
+                )
+                return self._token
+
+            raise RuntimeError(
+                f"[feishu] TokenManager: refresh failed and no valid cache: "
+                f"{self._last_refresh_error}"
+            )
+
+    async def _fetch_new_token(self) -> Optional[dict]:
+        """Fetch a new token from the Feishu API."""
+        import json as _json
+        import urllib.request
+
+        url = self._TOKEN_URL_TEMPLATE.format(domain=self._base_url())
+        payload = _json.dumps({
+            "app_id": self._app_id,
+            "app_secret": self._app_secret,
+        }).encode("utf-8")
+        try:
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            import asyncio
+            loop = asyncio.get_running_loop()
+            resp_bytes = await loop.run_in_executor(
+                None,
+                lambda: urllib.request.urlopen(req, timeout=10).read()
+            )
+            data = _json.loads(resp_bytes.decode("utf-8"))
+            if data.get("code") == 0:
+                return data.get("app_access_token", data)
+            else:
+                self._last_refresh_error = data.get("msg", "unknown")
+                logger.error("[feishu] TokenManager: fetch error: %s", self._last_refresh_error)
+                return None
+        except Exception as exc:
+            self._last_refresh_error = str(exc)
+            logger.error("[feishu] TokenManager: fetch exception: %s", exc)
+            return None
+
+    def invalidate(self) -> None:
+        """Force the next ``get_token()`` call to refresh.
+
+        Call this when a 4004 or 99991668 error indicates the token is invalid.
+        """
+        self._token = None
+        self._expires_at = 0.0
+
+    @property
+    def status(self) -> dict:
+        """Expose token state for /health/detailed and metrics."""
+        now = time.time()
+        return {
+            "has_token": self._token is not None,
+            "expires_in_secs": round(max(0, self._expires_at - now), 1) if self._expires_at else 0,
+            "refresh_count": self._refresh_count,
+            "last_error": self._last_refresh_error,
+        }
+
+
 class FeishuAdapter(BasePlatformAdapter):
     """Feishu/Lark bot adapter."""
 
@@ -1703,6 +1911,8 @@ class FeishuAdapter(BasePlatformAdapter):
         self._ws_future: Optional[asyncio.Future] = None
         self._ws_thread_loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        # Phase 0.3: token manager for HTTP-fallback sends and /health/detailed
+        self._token_manager: Optional[FeishuTokenManager] = None
         self._webhook_runner: Optional[Any] = None
         self._webhook_site: Optional[Any] = None
         self._event_handler: Optional[Any] = None
@@ -2183,9 +2393,12 @@ class FeishuAdapter(BasePlatformAdapter):
                     )
                 last_response = response
 
-            return self._finalize_send_result(last_response, "发送失败")
+            result = self._finalize_send_result(last_response, "发送失败")
+            self._record_outbound(result.success)  # Phase 0: record outbound
+            return result
         except Exception as exc:
             logger.error("[Feishu] Send error: %s", exc, exc_info=True)
+            self._record_outbound(success=False)  # Phase 0: record outbound failure
             return SendResult(success=False, error=str(exc))
 
     async def edit_message(
@@ -2655,6 +2868,7 @@ class FeishuAdapter(BasePlatformAdapter):
         during startup/restart or network-flap reconnect), the event is queued
         for replay instead of dropped.
         """
+        self._record_inbound()  # Phase 0: record inbound timestamp
         loop = self._loop
         if not self._loop_accepts_callbacks(loop):
             start_drainer = self._enqueue_pending_inbound_event(data)
@@ -3980,6 +4194,9 @@ class FeishuAdapter(BasePlatformAdapter):
         if download_notices:
             text = "\n".join(part for part in [text, *download_notices] if part)
 
+        if download_notices:
+            text = "\n".join(part for part in [text, *download_notices] if part)
+
         return text, inbound_type, media_urls, media_types, list(normalized.mentions)
 
     async def _download_feishu_message_resources(
@@ -4931,6 +5148,12 @@ class FeishuAdapter(BasePlatformAdapter):
             raise RuntimeError("未安装 websockets，无法使用 websocket 模式")
         domain = FEISHU_DOMAIN if self._domain_name != "lark" else LARK_DOMAIN
         self._client = self._build_lark_client(domain)
+        # Phase 0.3: initialize token manager for HTTP-fallback and /health/detailed
+        self._token_manager = FeishuTokenManager(
+            app_id=self._app_id,
+            app_secret=self._app_secret,
+            domain=self._domain_name,
+        )
         self._event_handler = self._build_event_handler()
         if self._event_handler is None:
             raise RuntimeError("飞书事件处理器构建失败")
