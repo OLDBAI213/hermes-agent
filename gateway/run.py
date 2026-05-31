@@ -2600,8 +2600,7 @@ def _normalize_empty_agent_response(
         ) or ("400" in error_str and history_len > 50)
         if is_context_failure:
             return (
-                "⚠️ 会话超出模型上下文窗口限制。
-"
+                "⚠️ 会话超出模型上下文窗口限制。\n"
                 "使用 /compact 压缩对话，或使用 /reset 开始新会话。"
             )
         return (
@@ -2615,7 +2614,8 @@ def _normalize_empty_agent_response(
             err = agent_result.get("error", "processing incomplete")
             return f"⚠️ 处理已停止: {str(err)[:200]}。请重试。"
         return (
-            "⚠️ 处理完成但未生成响应。这可能是临时错误，请重新发送消息。"
+            "⚠️ 处理完成但未生成响应。"
+            "这可能是临时错误，请重新发送消息。"
         )
 
     return response
@@ -3512,6 +3512,22 @@ class GatewayRunner:
 
         existing = self.adapters.get(adapter.platform)
         if existing is adapter:
+            # Notify the platform's home channel BEFORE disconnecting and
+            # removing the adapter from self.adapters.  Once popped, the
+            # notice helper cannot look up the adapter anymore.
+            if adapter.fatal_error_retryable:
+                if adapter.platform == Platform.FEISHU:
+                    await self._send_platform_status_notice(
+                        adapter.platform,
+                        "🔌 飞书连接中断，正在自动重连…",
+                        adapter=adapter,
+                    )
+                else:
+                    await self._send_platform_status_notice(
+                        adapter.platform,
+                        "🔌 Connection lost — auto-reconnecting…",
+                        adapter=adapter,
+                    )
             try:
                 await adapter.disconnect()
             finally:
@@ -6890,6 +6906,18 @@ class GatewayRunner:
                         )
                         logger.info("✓ %s reconnected successfully", platform.value)
 
+                        # Notify the platform's home channel.
+                        if platform == Platform.FEISHU:
+                            await self._send_platform_status_notice(
+                                platform,
+                                "✅ 飞书已重新连接",
+                            )
+                        else:
+                            await self._send_platform_status_notice(
+                                platform,
+                                "✅ Reconnected successfully",
+                            )
+
                         # Rebuild channel directory with the new adapter
                         try:
                             from gateway.channel_directory import build_channel_directory
@@ -6931,6 +6959,18 @@ class GatewayRunner:
                                     or "failed to reconnect"
                                 ),
                             )
+                            if platform == Platform.FEISHU:
+                                await self._send_platform_status_notice(
+                                    platform,
+                                    "⚠️ 飞书重连失败（已尝试 10 次），已暂停自动重试。请在终端运行 hermes gateway restart 或在飞书发送 /platform resume feishu 手动恢复。",
+                                    adapter=adapter,
+                                )
+                            else:
+                                await self._send_platform_status_notice(
+                                    platform,
+                                    "⚠️ Reconnect failed after 10 attempts — paused. Use /platform resume to retry manually.",
+                                    adapter=adapter,
+                                )
                 except Exception as e:
                     self._update_platform_runtime_status(
                         platform.value,
@@ -10218,9 +10258,7 @@ class GatewayRunner:
                         _foot_adapter = self.adapters.get(source.platform)
                         if _foot_adapter:
                             # For Feishu, send footer as interactive card instead of plain text
-                            logger.info("[DEBUG] footer platform=%s adapter=%s", source.platform, type(_foot_adapter).__name__)
                             if source.platform == "feishu":
-                                logger.info("[DEBUG] sending footer as interactive card")
                                 from gateway.platforms.feishu import _build_runtime_footer_card_payload
                                 _card_payload = _build_runtime_footer_card_payload(_footer_line)
                                 await _foot_adapter._feishu_send_with_retry(
@@ -10229,7 +10267,6 @@ class GatewayRunner:
                                     payload=_card_payload,
                                     reply_to=None, metadata=None,
                                 )
-                                logger.info("[DEBUG] interactive card sent")
                             else:
                                 await _foot_adapter.send(
                                     source.chat_id,
@@ -10289,9 +10326,9 @@ class GatewayRunner:
                 # for the API to process — treat it the same way.
                 if _hist_len > 50:
                     return (
-                        "⚠️ 会话超出模型上下文窗口限制。
-"
-                        "使用 /compact 压缩对话，或使用 /reset 开始新会话。"
+                        "⚠️ Session too large for the model's context window.\n"
+                        "使用 /compact 压缩对话，或"
+                        "使用 /reset 开始新会话。"
                     )
                 elif status_code == 400:
                     status_hint = " The request was rejected by the API."
@@ -15669,6 +15706,129 @@ class GatewayRunner:
             return None
         finally:
             notify_path.unlink(missing_ok=True)
+
+    async def _send_platform_status_notice(
+        self,
+        platform: Any,
+        message: str,
+        *,
+        adapter: Any = None,
+    ) -> None:
+        """Send a best-effort status notice to a platform's home channel.
+
+        Used for disconnection, reconnection, and retry notifications so
+        users are never left wondering whether the gateway is still alive.
+
+        Strategy:
+          1. Try adapter.send() — the lark.Client uses REST API and works
+             even when the WebSocket is down, as long as the client was
+             initialised before the disconnect.
+          2. If the adapter has no client or send() fails, fall back to a
+             raw HTTP POST to the Feishu open API (no SDK dependency).
+
+        The ``adapter`` kwarg lets callers pass a specific adapter instance
+        that may already have been removed from ``self.adapters`` (e.g.
+        during reconnection failures).
+        """
+        try:
+            _adapter = adapter or self.adapters.get(platform)
+            if _adapter is None:
+                return
+            home = self.config.get_home_channel(platform)
+            if not home or not home.chat_id:
+                return
+            metadata = {"thread_id": home.thread_id} if home.thread_id else None
+            result = await _adapter.send(str(home.chat_id), message, metadata=metadata) if metadata else await _adapter.send(str(home.chat_id), message)
+            if result is not None and getattr(result, "success", True) is False:
+                logger.debug(
+                    "Adapter send to %s home channel failed, trying HTTP fallback: %s",
+                    platform.value, getattr(result, "error", "unknown"),
+                )
+                await self._feishu_http_fallback_send(_adapter, str(home.chat_id), message)
+            # success or None → done
+        except Exception as exc:
+            logger.debug(
+                "Status notice for %s via adapter failed, trying HTTP fallback: %s",
+                platform.value, exc,
+            )
+            try:
+                await self._feishu_http_fallback_send(_adapter, str(home.chat_id), message)
+            except Exception as exc2:
+                logger.debug(
+                    "HTTP fallback for %s also failed (non-critical): %s",
+                    platform.value, exc2,
+                )
+
+    async def _feishu_http_fallback_send(
+        self,
+        adapter: Any,
+        chat_id: str,
+        message: str,
+    ) -> None:
+        """Send a text message via raw HTTP to the Feishu open API.
+
+        This is a last-resort path used when the lark_oapi Client is
+        unavailable (e.g. before first connect, or after explicit
+        disconnect that cleared internal state).
+
+        Only works for Feishu/Lark — other platforms are silently ignored.
+        """
+        if not hasattr(adapter, "_app_id") or not hasattr(adapter, "_app_secret"):
+            return
+        app_id = adapter._app_id
+        app_secret = adapter._app_secret
+        domain_name = getattr(adapter, "_domain_name", "feishu")
+        base_urls = {
+            "feishu": "https://open.feishu.cn",
+            "lark": "https://open.larksuite.com",
+        }
+        base_url = base_urls.get(domain_name, base_urls["feishu"])
+
+        import json as _json
+        import urllib.request
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+
+        def _do_http_post() -> None:
+            # Step 1: get tenant_access_token
+            token_body = _json.dumps({"app_id": app_id, "app_secret": app_secret}).encode("utf-8")
+            token_req = urllib.request.Request(
+                f"{base_url}/open-apis/auth/v3/tenant_access_token/internal",
+                data=token_body,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(token_req, timeout=10) as resp:
+                token_data = _json.loads(resp.read().decode("utf-8"))
+            access_token = token_data.get("tenant_access_token")
+            if not access_token:
+                return
+
+            # Step 2: send text message via REST API
+            msg_body = _json.dumps({
+                "receive_id": chat_id,
+                "msg_type": "text",
+                "content": _json.dumps({"text": message}),
+            }).encode("utf-8")
+            msg_req = urllib.request.Request(
+                f"{base_url}/open-apis/im/v1/messages?receive_id_type=chat_id",
+                data=msg_body,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(msg_req, timeout=10) as resp:
+                resp_data = _json.loads(resp.read().decode("utf-8"))
+            if resp_data.get("code") != 0:
+                logger.debug(
+                    "Feishu HTTP fallback send returned code=%s: %s",
+                    resp_data.get("code"),
+                    resp_data.get("msg", "unknown"),
+                )
+
+        await loop.run_in_executor(None, _do_http_post)
 
     async def _send_home_channel_startup_notifications(
         self,
