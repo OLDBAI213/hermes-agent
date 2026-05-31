@@ -31,7 +31,7 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
 
     const guardedErr = (e: unknown) => {
       if (!stale()) {
-        sys(`error: ${rpcErrorMessage(e)}`)
+        sys(`错误：${rpcErrorMessage(e)}`)
       }
     }
 
@@ -67,7 +67,7 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
         }
 
         if (matches.length > 1) {
-          sys(`ambiguous command: ${matches.slice(0, 6).join(', ')}${matches.length > 6 ? ', …' : ''}`)
+          sys(`命令不明确：${matches.slice(0, 6).join(', ')}${matches.length > 6 ? ', …' : ''}`)
 
           return true
         }
@@ -80,8 +80,8 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
           return
         }
 
-        const body = r?.output || `/${parsed.name}: no output`
-        const text = r?.warning ? `warning: ${r.warning}\n${body}` : body
+        const body = r?.output || `/${parsed.name}：无输出`
+        const text = r?.warning ? `警告：${r.warning}\n${body}` : body
         const long = text.length > 180 || text.split('\n').filter(Boolean).length > 2
 
         long ? page(text, parsed.name[0]!.toUpperCase() + parsed.name.slice(1)) : sys(text)
@@ -96,11 +96,11 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
             const d = asCommandDispatch(raw)
 
             if (!d) {
-              return sys('error: invalid response: command.dispatch')
+              return sys('错误：command.dispatch 返回无效响应')
             }
 
             if (d.type === 'exec' || d.type === 'plugin') {
-              return sys(d.output || '(no output)')
+              return sys(d.output || '（无输出）')
             }
 
             if (d.type === 'alias') {
@@ -108,16 +108,16 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
             }
 
             if (d.type === 'skill') {
-              sys(`⚡ loading skill: ${d.name}`)
+              sys(`⚡ 正在加载技能：${d.name}`)
 
-              return d.message?.trim() ? send(d.message) : sys(`/${parsed.name}: skill payload missing message`)
+              return d.message?.trim() ? send(d.message) : sys(`/${parsed.name}：技能载荷缺少消息`)
             }
 
             if (d.type === 'send') {
               if (d.notice?.trim()) {
                 sys(d.notice)
               }
-              return d.message?.trim() ? send(d.message) : sys(`/${parsed.name}: empty message`)
+              return d.message?.trim() ? send(d.message) : sys(`/${parsed.name}：消息为空`)
             }
           })
           .catch(guardedErr)

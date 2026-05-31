@@ -287,6 +287,13 @@ def init_agent(
     provider_name = provider.strip().lower() if isinstance(provider, str) and provider.strip() else None
     agent.provider = provider_name or ""
     agent.acp_command = acp_command or command
+    
+    # Load config once at the start to avoid multiple YAML parses
+    try:
+        from hermes_cli.config import load_config as _load_config_once
+        _shared_cfg = _load_config_once()
+    except Exception:
+        _shared_cfg = {}
     agent.acp_args = list(acp_args or args or [])
     if api_mode in {"chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse", "codex_app_server"}:
         agent.api_mode = api_mode
@@ -379,11 +386,23 @@ def init_agent(
     # AIAgent is created for every gateway request, so without the guard
     # each message leaks one OS thread and the process eventually exhausts
     # the system thread limit (RuntimeError: can't start new thread).
+    # Add a timeout wrapper to prevent the thread from hanging indefinitely.
     if (agent.provider == "openrouter" or agent._is_openrouter_url()) and \
             not _ra()._openrouter_prewarm_done.is_set():
         _ra()._openrouter_prewarm_done.set()
+        def _prewarm_with_timeout():
+            """Wrapper with 30s timeout to prevent thread hanging."""
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(fetch_model_metadata)
+                try:
+                    future.result(timeout=30)
+                except concurrent.futures.TimeoutError:
+                    _ra().logger.warning("OpenRouter prewarm timed out after 30s")
+                except Exception as e:
+                    _ra().logger.warning("OpenRouter prewarm failed: %s", e)
         threading.Thread(
-            target=fetch_model_metadata,
+            target=_prewarm_with_timeout,
             daemon=True,
             name="openrouter-prewarm",
         ).start()
@@ -476,9 +495,7 @@ def init_agent(
     # sessions with >5-minute pauses between turns (#14971).
     agent._cache_ttl = "5m"
     try:
-        from hermes_cli.config import load_config as _load_pc_cfg
-
-        _pc_cfg = _load_pc_cfg().get("prompt_caching", {}) or {}
+        _pc_cfg = _shared_cfg.get("prompt_caching", {}) or {}
         _ttl = _pc_cfg.get("cache_ttl", "5m")
         if _ttl in {"5m", "1h"}:
             agent._cache_ttl = _ttl
@@ -669,8 +686,7 @@ def init_agent(
         # Guardrail config — read from config.yaml at init time.
         agent._bedrock_guardrail_config = None
         try:
-            from hermes_cli.config import load_config as _load_br_cfg
-            _gr = _load_br_cfg().get("bedrock", {}).get("guardrail", {})
+            _gr = _shared_cfg.get("bedrock", {}).get("guardrail", {})
             if _gr.get("guardrail_identifier") and _gr.get("guardrail_version"):
                 agent._bedrock_guardrail_config = {
                     "guardrailIdentifier": _gr["guardrail_identifier"],
@@ -995,8 +1011,7 @@ def init_agent(
     # reads the JSON files directly.  See run_agent._save_session_log.
     agent._session_json_enabled = False
     try:
-        from hermes_cli.config import load_config as _load_sess_cfg
-        _sess_cfg = (_load_sess_cfg().get("sessions") or {})
+        _sess_cfg = (_shared_cfg.get("sessions") or {})
         agent._session_json_enabled = bool(_sess_cfg.get("write_json_snapshots", False))
     except Exception:
         pass
@@ -1042,10 +1057,9 @@ def init_agent(
     from tools.todo_tool import TodoStore
     agent._todo_store = TodoStore()
     
-    # Load config once for memory, skills, and compression sections
+    # Use shared config loaded at the start of init_agent
     try:
-        from hermes_cli.config import load_config as _load_agent_config
-        _agent_cfg = _load_agent_config()
+        _agent_cfg = _shared_cfg
     except Exception:
         _agent_cfg = {}
     try:

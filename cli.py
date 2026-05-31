@@ -302,7 +302,23 @@ def _load_prefill_messages(file_path: str) -> List[Dict[str, Any]]:
         if not isinstance(data, list):
             logger.warning("Prefill messages file must contain a JSON array: %s", path)
             return []
-        return data
+        # Validate each message has required fields
+        valid_roles = {"system", "user", "assistant", "tool"}
+        validated = []
+        for i, msg in enumerate(data):
+            if not isinstance(msg, dict):
+                logger.warning("Prefill message %d is not a dict, skipping", i)
+                continue
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role not in valid_roles:
+                logger.warning("Prefill message %d has invalid role '%s', skipping", i, role)
+                continue
+            if not isinstance(content, str):
+                logger.warning("Prefill message %d has non-string content, skipping", i)
+                continue
+            validated.append({"role": role, "content": content})
+        return validated
     except Exception as e:
         logger.warning("Failed to load prefill messages from %s: %s", path, e)
         return []
@@ -8698,7 +8714,18 @@ class HermesCLI:
                         target = target if target.startswith("/") else f"/{target}"
                         user_args = cmd_original[len(base_cmd):].strip()
                         aliased_command = f"{target} {user_args}".strip()
-                        return self.process_command(aliased_command)
+                        # Prevent infinite recursion from circular aliases
+                        if not hasattr(self, '_alias_recursion_depth'):
+                            self._alias_recursion_depth = 0
+                        self._alias_recursion_depth += 1
+                        if self._alias_recursion_depth > 5:
+                            self._alias_recursion_depth = 0
+                            self._console_print(f"[bold red]Quick command alias recursion detected (depth > 5). Check for circular aliases in config.[/]")
+                        else:
+                            try:
+                                return self.process_command(aliased_command)
+                            finally:
+                                self._alias_recursion_depth -= 1
                     else:
                         self._console_print(f"[bold red]Quick command '{base_cmd}' has no target defined[/]")
                 else:
@@ -11691,6 +11718,7 @@ class HermesCLI:
                     _parts, _skipped = build_native_content_parts(
                         _text_for_parts,
                         _img_str_paths,
+                        provider=(self.provider or "").strip(),
                     )
                     if _skipped:
                         _cprint(
@@ -15204,6 +15232,7 @@ def main(
                                 query if isinstance(query, str) else "",
                                 [str(p) for p in single_query_images],
                                 image_urls=list(single_query_image_urls) or None,
+                                provider=(cli.provider or "").strip(),
                             )
                             if any(p.get("type") == "image_url" for p in _parts):
                                 effective_query = _parts

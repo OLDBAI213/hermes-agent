@@ -62,6 +62,36 @@ def _ra():
     return run_agent
 
 
+def _memory_pre_tool_decision(agent, function_name: str, function_args: dict) -> Optional[dict]:
+    """Return a memory-provider safety verdict for this tool call, if any."""
+    if not getattr(agent, "_memory_manager", None):
+        return None
+    try:
+        return agent._memory_manager.check_tool_safety(
+            function_name,
+            function_args,
+            session_id=agent.session_id or "",
+            platform=getattr(agent, "platform", "") or "",
+        )
+    except Exception:
+        return None
+
+
+def _append_memory_warning(function_result, warning: str):
+    """Append a memory warning to the tool result without blocking execution."""
+    if not warning:
+        return function_result
+    if _is_multimodal_tool_result(function_result):
+        _append_subdir_hint_to_multimodal(
+            function_result,
+            f"\n\n[Memory warning: {warning}]",
+        )
+        return function_result
+    if isinstance(function_result, str):
+        return function_result + f"\n\n[Memory warning: {warning}]"
+    return function_result
+
+
 def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0) -> None:
     """Execute multiple tool calls concurrently using a thread pool.
 
@@ -83,7 +113,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
         return
 
     # ── Parse args + pre-execution bookkeeping ───────────────────────
-    parsed_calls = []  # list of (tool_call, function_name, function_args)
+    parsed_calls = []  # list of (tool_call, function_name, function_args, block_result, blocked_flag, memory_warning)
     for tool_call in tool_calls:
         function_name = tool_call.function.name
 
@@ -124,6 +154,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
 
         block_result = None
         blocked_by_guardrail = False
+        memory_warning = None
         try:
             from hermes_cli.plugins import get_pre_tool_call_block_message
             block_message = get_pre_tool_call_block_message(
@@ -135,18 +166,32 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
         if block_message is not None:
             block_result = json.dumps({"error": block_message}, ensure_ascii=False)
         else:
-            guardrail_decision = agent._tool_guardrails.before_call(function_name, function_args)
-            if not guardrail_decision.allows_execution:
-                block_result = agent._guardrail_block_result(guardrail_decision)
-                blocked_by_guardrail = True
+            memory_decision = _memory_pre_tool_decision(agent, function_name, function_args)
+            if memory_decision is not None:
+                if memory_decision.get("action") == "block":
+                    block_result = json.dumps(
+                        {
+                            "error": memory_decision.get("message", "Blocked by memory"),
+                            "memory_guardrail": memory_decision,
+                        },
+                        ensure_ascii=False,
+                    )
+                    blocked_by_guardrail = True
+                elif memory_decision.get("action") == "warn":
+                    memory_warning = str(memory_decision.get("message", "") or "").strip()
+            if block_result is None:
+                guardrail_decision = agent._tool_guardrails.before_call(function_name, function_args)
+                if not guardrail_decision.allows_execution:
+                    block_result = agent._guardrail_block_result(guardrail_decision)
+                    blocked_by_guardrail = True
 
-        parsed_calls.append((tool_call, function_name, function_args, block_result, blocked_by_guardrail))
+        parsed_calls.append((tool_call, function_name, function_args, block_result, blocked_by_guardrail, memory_warning))
 
     # ── Logging / callbacks ──────────────────────────────────────────
-    tool_names_str = ", ".join(name for _, name, _, _, _ in parsed_calls)
+    tool_names_str = ", ".join(name for _, name, _, _, _, _ in parsed_calls)
     if not agent.quiet_mode:
         print(f"  ⚡ Concurrent: {num_tools} tool calls — {tool_names_str}")
-        for i, (tc, name, args, block_result, blocked_by_guardrail) in enumerate(parsed_calls, 1):
+        for i, (tc, name, args, block_result, blocked_by_guardrail, memory_warning) in enumerate(parsed_calls, 1):
             args_str = json.dumps(args, ensure_ascii=False)
             if agent.verbose_logging:
                 print(f"  📞 Tool {i}: {name}({list(args.keys())})")
@@ -155,7 +200,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                 args_preview = args_str[:agent.log_prefix_chars] + "..." if len(args_str) > agent.log_prefix_chars else args_str
                 print(f"  📞 Tool {i}: {name}({list(args.keys())}) - {args_preview}")
 
-    for tc, name, args, block_result, blocked_by_guardrail in parsed_calls:
+    for tc, name, args, block_result, blocked_by_guardrail, memory_warning in parsed_calls:
         if block_result is not None:
             continue
         if agent.tool_progress_callback:
@@ -165,7 +210,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
             except Exception as cb_err:
                 logging.debug(f"Tool progress callback error: {cb_err}")
 
-    for tc, name, args, block_result, blocked_by_guardrail in parsed_calls:
+    for tc, name, args, block_result, blocked_by_guardrail, memory_warning in parsed_calls:
         if block_result is not None:
             continue
         if agent.tool_start_callback:
@@ -177,7 +222,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
     # ── Concurrent execution ─────────────────────────────────────────
     # Each slot holds (function_name, function_args, function_result, duration, error_flag, blocked_flag)
     results = [None] * num_tools
-    for i, (tc, name, args, block_result, blocked_by_guardrail) in enumerate(parsed_calls):
+    for i, (tc, name, args, block_result, blocked_by_guardrail, memory_warning) in enumerate(parsed_calls):
         if block_result is not None:
             results[i] = (name, args, block_result, 0.0, True, True)
 
@@ -279,7 +324,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
     try:
         runnable_calls = [
             (i, tc, name, args)
-            for i, (tc, name, args, block_result, blocked_by_guardrail) in enumerate(parsed_calls)
+            for i, (tc, name, args, block_result, blocked_by_guardrail, memory_warning) in enumerate(parsed_calls)
             if block_result is None
         ]
         futures = []
@@ -346,7 +391,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
             spinner.stop(f"⚡ {completed}/{num_tools} tools completed in {total_dur:.1f}s total")
 
     # ── Post-execution: display per-tool results ─────────────────────
-    for i, (tc, name, args, block_result, blocked_by_guardrail) in enumerate(parsed_calls):
+    for i, (tc, name, args, block_result, blocked_by_guardrail, memory_warning) in enumerate(parsed_calls):
         r = results[i]
         blocked = False
         if r is None:
@@ -366,6 +411,8 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                     function_result,
                     failed=is_error,
                 )
+                if memory_warning:
+                    function_result = _append_memory_warning(function_result, memory_warning)
 
             if is_error:
                 _err_text = _multimodal_text_summary(function_result)
@@ -508,12 +555,25 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             pass
 
         _guardrail_block_decision: ToolGuardrailDecision | None = None
+        _memory_block_decision: Optional[dict] = None
+        _memory_warning: Optional[str] = None
         if _block_msg is None:
-            guardrail_decision = agent._tool_guardrails.before_call(function_name, function_args)
-            if not guardrail_decision.allows_execution:
-                _guardrail_block_decision = guardrail_decision
+            _memory_decision = _memory_pre_tool_decision(agent, function_name, function_args)
+            if _memory_decision is not None:
+                if _memory_decision.get("action") == "block":
+                    _memory_block_decision = _memory_decision
+                elif _memory_decision.get("action") == "warn":
+                    _memory_warning = str(_memory_decision.get("message", "") or "").strip()
+            if _memory_block_decision is None:
+                guardrail_decision = agent._tool_guardrails.before_call(function_name, function_args)
+                if not guardrail_decision.allows_execution:
+                    _guardrail_block_decision = guardrail_decision
 
-        _execution_blocked = _block_msg is not None or _guardrail_block_decision is not None
+        _execution_blocked = (
+            _block_msg is not None
+            or _memory_block_decision is not None
+            or _guardrail_block_decision is not None
+        )
 
         if _execution_blocked:
             # Tool blocked by plugin or guardrail policy — skip counters,
@@ -590,6 +650,15 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
         if _block_msg is not None:
             # Tool blocked by plugin policy — return error without executing.
             function_result = json.dumps({"error": _block_msg}, ensure_ascii=False)
+            tool_duration = 0.0
+        elif _memory_block_decision is not None:
+            function_result = json.dumps(
+                {
+                    "error": _memory_block_decision.get("message", "Blocked by memory"),
+                    "memory_guardrail": _memory_block_decision,
+                },
+                ensure_ascii=False,
+            )
             tool_duration = 0.0
         elif _guardrail_block_decision is not None:
             # Tool blocked by tool-loop guardrail — synthesize exactly one
@@ -798,6 +867,8 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 function_result,
                 failed=_is_error_result,
             )
+            if _memory_warning:
+                function_result = _append_memory_warning(function_result, _memory_warning)
             result_preview = function_result if agent.verbose_logging else (
                 function_result[:200] if len(function_result) > 200 else function_result
             )

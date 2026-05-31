@@ -360,7 +360,7 @@ class TestCheckVoiceRequirements:
         assert result["available"] is True
         assert result["audio_available"] is True
         assert result["missing_packages"] == []
-        assert "Termux:API microphone" in result["details"]
+        assert "Termux:API" in result["details"]
 
     def test_all_requirements_met(self, monkeypatch):
         monkeypatch.setattr("tools.voice_mode._audio_available", lambda: True)
@@ -401,7 +401,7 @@ class TestCheckVoiceRequirements:
         result = check_voice_requirements()
         assert result["available"] is False
         assert result["stt_available"] is False
-        assert "STT provider: MISSING" in result["details"]
+        assert "STT 提供方：缺失" in result["details"]
 
 
 # ============================================================================

@@ -5,7 +5,7 @@ import type { AppLayoutProgressProps } from '../app/interfaces.js'
 import { toggleTodoCollapsed, useTurnSelector } from '../app/turnStore.js'
 import { $uiState } from '../app/uiStore.js'
 import { appendToolShelfMessage } from '../lib/liveProgress.js'
-import type { DetailsMode, Msg, SectionVisibility } from '../types.js'
+import type { DetailsMode, Msg, SectionVisibility, TurnPhase } from '../types.js'
 
 import { MessageLine } from './messageLine.js'
 import { TodoPanel } from './todoPanel.js'
@@ -19,7 +19,8 @@ export const StreamingAssistant = memo(function StreamingAssistant({
   detailsMode,
   detailsModeCommandOverride,
   progress,
-  sections
+  sections,
+  turnPhase
 }: StreamingAssistantProps) {
   const ui = useStore($uiState)
   const streamSegments = useTurnSelector(state => state.streamSegments)
@@ -44,6 +45,7 @@ export const StreamingAssistant = memo(function StreamingAssistant({
           msg={msg}
           sections={sections}
           t={ui.theme}
+          turnPhase={turnPhase}
         />
       ))}
 
@@ -57,6 +59,7 @@ export const StreamingAssistant = memo(function StreamingAssistant({
           sections={sections}
           t={ui.theme}
           tools={activeTools}
+          turnPhase={turnPhase}
         />
       )}
 
@@ -74,6 +77,7 @@ export const StreamingAssistant = memo(function StreamingAssistant({
           }}
           sections={sections}
           t={ui.theme}
+          turnPhase={turnPhase}
         />
       )}
 
@@ -86,6 +90,7 @@ export const StreamingAssistant = memo(function StreamingAssistant({
           msg={{ kind: 'trail', role: 'system', text: '', tools: streamPendingTools }}
           sections={sections}
           t={ui.theme}
+          turnPhase={turnPhase}
         />
       )}
     </>
@@ -107,4 +112,5 @@ interface StreamingAssistantProps {
   detailsModeCommandOverride: boolean
   progress: AppLayoutProgressProps
   sections?: SectionVisibility
+  turnPhase?: null | TurnPhase
 }

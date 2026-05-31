@@ -15,23 +15,21 @@ Two modes:
 The decision is made once per message turn by :func:`decide_image_input_mode`.
 It reads ``agent.image_input_mode`` from config.yaml (``auto`` | ``native``
 | ``text``, default ``auto``) and the active model's capability metadata.
-Explicit ``native`` is authoritative because the local config may know about
-a multimodal provider before the cached capability registry does.
+Explicit ``native`` is authoritative only when model capability is unknown.
+If the active model is known to be text-only, Hermes falls back to text routing.
 
 In ``auto`` mode:
-  - If the user has explicitly configured ``auxiliary.vision.provider``
-    (i.e. not ``auto`` and not empty), we assume they want the text pipeline
-    regardless of the main model — they've opted in to a specific vision
-    backend for a reason (cost, quality, local-only, etc.).
-  - Otherwise, if the active model reports ``supports_vision=True`` in its
-    models.dev metadata, we attach natively.
+  - If the active model reports ``supports_vision=True`` in its models.dev
+    metadata or config override, we attach natively.
+  - Otherwise, if the user has explicitly configured
+    ``auxiliary.vision.provider`` (i.e. not ``auto`` and not empty), we use
+    the text pipeline.
   - Otherwise (non-vision model, no explicit override), we fall back to text.
 
-This keeps ``vision_analyze`` surfaced as a tool in every session — skills
-and agent flows that chain it (browser screenshots, deeper inspection of
-URL-referenced images, style-gating loops) keep working. The routing only
-affects *how user-attached images on the current turn* are presented to the
-main model.
+The routing only affects *how user-attached images on the current turn* are
+presented to the main model. Tool-list exposure is handled separately in
+``model_tools`` so native multimodal models are not encouraged to call an
+external vision tool for images they can already see.
 """
 
 from __future__ import annotations
@@ -48,7 +46,6 @@ logger = logging.getLogger(__name__)
 
 
 _VALID_MODES = frozenset({"auto", "native", "text"})
-
 
 # Image extensions used by extract_image_refs(). Kept tight on purpose — we
 # only auto-attach things the model can actually see. Documents/archives are
@@ -312,18 +309,28 @@ def decide_image_input_mode(
         if isinstance(agent_cfg, dict):
             mode_cfg = _coerce_mode(agent_cfg.get("image_input_mode"))
 
+    supports = _lookup_supports_vision(provider, model, cfg)
+
     if mode_cfg == "native":
+        if supports is False:
+            logger.warning(
+                "image_routing: agent.image_input_mode=native requested, but %s:%s "
+                "is known text-only; falling back to text image routing.",
+                provider,
+                model,
+            )
+            return "text"
         return "native"
     if mode_cfg == "text":
         return "text"
 
-    # auto
-    if _explicit_aux_vision_override(cfg):
-        return "text"
-
-    supports = _lookup_supports_vision(provider, model, cfg)
+    # auto: the main model's native vision wins over a stale or optional
+    # auxiliary vision config. Users who truly want forced OCR/text summaries
+    # can set ``agent.image_input_mode: text`` explicitly.
     if supports is True:
         return "native"
+    if _explicit_aux_vision_override(cfg):
+        return "text"
     return "text"
 
 
@@ -429,11 +436,12 @@ def build_native_content_parts(
     user_text: str,
     image_paths: List[str],
     image_urls: Optional[List[str]] = None,
+    provider: str = "",
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Build an OpenAI-style ``content`` list for a user turn.
 
     Shape:
-      [{"type": "text", "text": "...\\n\\n[Image attached at: /local/path]"},
+      [{"type": "text", "text": "..."},
        {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}},
        {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
        ...]
@@ -442,17 +450,8 @@ def build_native_content_parts(
     Remote URLs (``http(s)://``) are passed through verbatim — the provider
     fetches them server-side. The model still sees the pixels either way.
 
-    For each successfully attached image, a hint is appended to the text
-    part:
-
-      * local path → ``[Image attached at: <path>]``
-      * URL        → ``[Image attached: <url>]``
-
-    The hint gives the model a string handle so MCP/skill tools that take
-    an image path or URL argument can be invoked on the same image without
-    an extra round-trip. This parallels the text-mode hint produced by
-    ``Runner._enrich_message_with_vision`` (``vision_analyze using image_url:
-    <path>``) so behaviour is consistent across both image input modes.
+    Native mode does not append local paths, cache paths, or MEDIA markers to
+    the text part. The model receives image bytes in the separate image parts.
 
     Images are attached at their native size. If a provider rejects the
     request because an image is too large (e.g. Anthropic's 5 MB per-image
@@ -463,6 +462,10 @@ def build_native_content_parts(
     that couldn't be read from disk; URLs are never skipped (they're
     not validated here).
     """
+    # ``provider`` remains in the public signature because callers pass it,
+    # but chat-completions image parts use the documented nested shape for
+    # every provider, including Xiaomi MiMo.
+    _ = provider
     skipped: List[str] = []
     image_parts: List[Dict[str, Any]] = []
     attached_paths: List[str] = []
@@ -477,33 +480,23 @@ def build_native_content_parts(
         if not data_url:
             skipped.append(str(raw_path))
             continue
-        image_parts.append({
-            "type": "image_url",
-            "image_url": {"url": data_url},
-        })
+        image_parts.append({"type": "image_url", "image_url": {"url": data_url}})
         attached_paths.append(str(raw_path))
 
     for url in image_urls or []:
         url = (url or "").strip()
         if not url:
             continue
-        image_parts.append({
-            "type": "image_url",
-            "image_url": {"url": url},
-        })
+        image_parts.append({"type": "image_url", "image_url": {"url": url}})
         attached_urls.append(url)
 
     text = (user_text or "").strip()
 
-    # If at least one image attached, build a single text part that combines
-    # the user's caption (or a neutral default) with one hint per image.
+    # If at least one image attached, include the user's caption or a neutral
+    # default. Do not expose local filenames/cache paths to the model text.
     if attached_paths or attached_urls:
         base_text = text or "What do you see in this image?"
-        hint_lines: List[str] = []
-        hint_lines.extend(f"[Image attached at: {p}]" for p in attached_paths)
-        hint_lines.extend(f"[Image attached: {u}]" for u in attached_urls)
-        combined_text = f"{base_text}\n\n" + "\n".join(hint_lines)
-        parts: List[Dict[str, Any]] = [{"type": "text", "text": combined_text}]
+        parts: List[Dict[str, Any]] = [{"type": "text", "text": base_text}]
         parts.extend(image_parts)
         return parts, skipped
 

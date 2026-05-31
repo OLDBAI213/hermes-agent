@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import tempfile
 import time
@@ -414,6 +415,112 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
             captured["calls"][1].request_body.content,
             json.dumps({"text": "可以用 粗体 和 斜体。"}, ensure_ascii=False),
         )
+
+    @patch.dict(os.environ, {}, clear=False)
+    def test_build_post_payload_never_emits_empty_text_elements(self):
+        from gateway.config import PlatformConfig
+        from gateway.platforms.feishu import FeishuAdapter
+
+        adapter = FeishuAdapter(PlatformConfig())
+        parsed = json.loads(adapter._build_post_payload("# 标题\n\n支持 **粗体** 和 `代码`"))
+
+        self.assertIn("title", parsed["zh_cn"])
+        for row in parsed["zh_cn"]["content"]:
+            for element in row:
+                if element.get("tag") == "text":
+                    self.assertTrue(element.get("text"))
+
+    @patch.dict(os.environ, {}, clear=False)
+    def test_outbound_format_post_forces_post_payload(self):
+        from gateway.config import PlatformConfig
+        from gateway.platforms.feishu import FeishuAdapter
+
+        adapter = FeishuAdapter(PlatformConfig(extra={"outbound_format": "post"}))
+        msg_type, payload = adapter._build_outbound_payload("普通正文")
+
+        self.assertEqual(msg_type, "post")
+        parsed = json.loads(payload)
+        self.assertEqual(parsed["zh_cn"]["content"][0][0]["text"], "普通正文")
+
+    @patch.dict(os.environ, {}, clear=False)
+    def test_outbound_format_text_forces_plain_text_payload(self):
+        from gateway.config import PlatformConfig
+        from gateway.platforms.feishu import FeishuAdapter
+
+        adapter = FeishuAdapter(PlatformConfig(extra={"outbound_format": "text"}))
+        msg_type, payload = adapter._build_outbound_payload("## 标题")
+
+        self.assertEqual(msg_type, "text")
+        self.assertEqual(json.loads(payload), {"text": "## 标题"})
+
+    @patch.dict(os.environ, {}, clear=False)
+    def test_card_mode_uses_interactive_payload(self):
+        from gateway.config import PlatformConfig
+        from gateway.platforms.feishu import FeishuAdapter
+
+        adapter = FeishuAdapter(PlatformConfig(extra={"card_mode": True}))
+        msg_type, payload = adapter._build_outbound_payload("## 标题")
+
+        self.assertEqual(msg_type, "interactive")
+        parsed = json.loads(payload)
+        self.assertEqual(parsed["elements"][0]["tag"], "markdown")
+        self.assertEqual(parsed["elements"][0]["content"], "## 标题")
+
+    @patch.dict(os.environ, {}, clear=False)
+    def test_markdown_table_stays_text_even_when_post_is_forced(self):
+        from gateway.config import PlatformConfig
+        from gateway.platforms.feishu import FeishuAdapter
+
+        content = "| a | b |\n|---|---|\n| 1 | 2 |"
+        adapter = FeishuAdapter(PlatformConfig(extra={"outbound_format": "post"}))
+        msg_type, payload = adapter._build_outbound_payload(content)
+
+        self.assertEqual(msg_type, "text")
+        self.assertEqual(json.loads(payload), {"text": content})
+
+    @patch.dict(os.environ, {}, clear=False)
+    def test_outbound_audit_logs_send_payload_preview(self):
+        from gateway.config import PlatformConfig
+        from gateway.platforms.feishu import FeishuAdapter
+
+        adapter = FeishuAdapter(PlatformConfig(extra={"outbound_audit": False}))
+        records = []
+
+        class _CaptureLogger:
+            def info(self, message):
+                records.append(json.loads(message))
+
+        adapter._outbound_audit_logger = _CaptureLogger()
+        adapter._outbound_audit_enabled = True
+        adapter._audit_outbound_message(
+            action="send",
+            chat_id="oc_chat",
+            msg_type="post",
+            payload='{"zh_cn":{"content":[[{"tag":"text","text":"hello"}]]}}',
+            metadata={"thread_id": "om_thread"},
+        )
+
+        self.assertEqual(records[0]["action"], "send")
+        self.assertEqual(records[0]["chat_id"], "oc_chat")
+        self.assertEqual(records[0]["msg_type"], "post")
+        self.assertEqual(records[0]["metadata"]["thread_id"], "om_thread")
+
+    @patch.dict(os.environ, {}, clear=False)
+    def test_outbound_audit_disabled_is_silent(self):
+        from gateway.config import PlatformConfig
+        from gateway.platforms.feishu import FeishuAdapter
+
+        adapter = FeishuAdapter(PlatformConfig(extra={"outbound_audit": False}))
+        adapter._outbound_audit_logger = Mock(spec=logging.Logger)
+
+        adapter._audit_outbound_message(
+            action="send",
+            chat_id="oc_chat",
+            msg_type="text",
+            payload='{"text":"hello"}',
+        )
+
+        adapter._outbound_audit_logger.info.assert_not_called()
 
     @patch.dict(os.environ, {}, clear=True)
     def test_get_chat_info_uses_real_feishu_chat_api(self):
@@ -1478,7 +1585,7 @@ class TestAdapterBehavior(unittest.TestCase):
             os.unlink(path)
 
         self.assertIn("hello from feishu", text)
-        self.assertIn("[Content of", text)
+        self.assertIn("[文件内容:", text)
 
     @patch.dict(os.environ, {}, clear=True)
     def test_message_event_submits_to_adapter_loop(self):
@@ -3961,7 +4068,7 @@ class TestFeishuMentionHint(unittest.TestCase):
         refs = [FeishuMentionRef(name="Alice", open_id="ou_alice")]
         self.assertEqual(
             _build_mention_hint(refs),
-            "[Mentioned: Alice (open_id=ou_alice)]",
+            "[提到: Alice (open_id=ou_alice)]",
         )
 
     def test_hint_multiple_users(self):
@@ -3973,14 +4080,14 @@ class TestFeishuMentionHint(unittest.TestCase):
         ]
         self.assertEqual(
             _build_mention_hint(refs),
-            "[Mentioned: Alice (open_id=ou_alice), Bob (open_id=ou_bob)]",
+            "[提到: Alice (open_id=ou_alice), Bob (open_id=ou_bob)]",
         )
 
     def test_hint_at_all(self):
         from gateway.platforms.feishu import FeishuMentionRef, _build_mention_hint
 
         refs = [FeishuMentionRef(is_all=True)]
-        self.assertEqual(_build_mention_hint(refs), "[Mentioned: @all]")
+        self.assertEqual(_build_mention_hint(refs), "[提到: @all]")
 
     def test_hint_filters_self_mentions(self):
         from gateway.platforms.feishu import FeishuMentionRef, _build_mention_hint
@@ -3991,7 +4098,7 @@ class TestFeishuMentionHint(unittest.TestCase):
         ]
         self.assertEqual(
             _build_mention_hint(refs),
-            "[Mentioned: Alice (open_id=ou_alice)]",
+            "[提到: Alice (open_id=ou_alice)]",
         )
 
     def test_hint_returns_empty_when_only_self(self):
@@ -4009,13 +4116,13 @@ class TestFeishuMentionHint(unittest.TestCase):
         from gateway.platforms.feishu import FeishuMentionRef, _build_mention_hint
 
         refs = [FeishuMentionRef(name="Alice", open_id="")]
-        self.assertEqual(_build_mention_hint(refs), "[Mentioned: Alice]")
+        self.assertEqual(_build_mention_hint(refs), "[提到: Alice]")
 
     def test_hint_uses_unknown_placeholder_when_name_missing(self):
         from gateway.platforms.feishu import FeishuMentionRef, _build_mention_hint
 
         refs = [FeishuMentionRef(name="", open_id="ou_xxx")]
-        self.assertEqual(_build_mention_hint(refs), "[Mentioned: unknown (open_id=ou_xxx)]")
+        self.assertEqual(_build_mention_hint(refs), "[提到: unknown (open_id=ou_xxx)]")
 
     def test_hint_dedupes_repeated_user(self):
         from gateway.platforms.feishu import FeishuMentionRef, _build_mention_hint
@@ -4027,14 +4134,14 @@ class TestFeishuMentionHint(unittest.TestCase):
         ]
         self.assertEqual(
             _build_mention_hint(refs),
-            "[Mentioned: Alice (open_id=ou_alice), Bob (open_id=ou_bob)]",
+            "[提到: Alice (open_id=ou_alice), Bob (open_id=ou_bob)]",
         )
 
     def test_hint_dedupes_repeated_at_all(self):
         from gateway.platforms.feishu import FeishuMentionRef, _build_mention_hint
 
         refs = [FeishuMentionRef(is_all=True), FeishuMentionRef(is_all=True)]
-        self.assertEqual(_build_mention_hint(refs), "[Mentioned: @all]")
+        self.assertEqual(_build_mention_hint(refs), "[提到: @all]")
 
 
 class TestFeishuStripLeadingSelf(unittest.TestCase):
@@ -4270,7 +4377,7 @@ class TestFeishuNormalizeWithMentions(unittest.TestCase):
     def test_text_message_at_all_in_text_without_mentions_payload(self):
         """Feishu SDK sometimes omits @_all from the mentions payload (confirmed
         via im.v1.message.get). The fallback scan on raw text must still yield
-        an is_all ref so [Mentioned: @all] gets injected."""
+        an is_all ref so [提到: @all] gets injected."""
         from gateway.platforms.feishu import normalize_feishu_message
 
         normalized = normalize_feishu_message(
@@ -4497,7 +4604,7 @@ class TestFeishuProcessInboundMessage(unittest.TestCase):
         )
         event = adapter._dispatch_inbound_event.call_args.args[0]
         self.assertEqual(event.message_type, MessageType.TEXT)
-        self.assertIn("[Mentioned: Alice (open_id=ou_alice), Bob (open_id=ou_bob)]", event.text)
+        self.assertIn("[提到: Alice (open_id=ou_alice), Bob (open_id=ou_bob)]", event.text)
         self.assertIn("@Alice @Bob make a group", event.text)
 
     def test_command_message_never_injects_hint(self):
@@ -4532,7 +4639,7 @@ class TestFeishuProcessInboundMessage(unittest.TestCase):
             )
         )
         event = adapter._dispatch_inbound_event.call_args.args[0]
-        self.assertNotIn("[Mentioned:", event.text)
+        self.assertNotIn("[提到:", event.text)
         self.assertTrue(event.text.startswith("/model"))
 
     def test_mid_text_self_mention_preserved(self):
@@ -4629,8 +4736,8 @@ class TestFeishuFetchMessageText(unittest.TestCase):
 
         result = asyncio.run(adapter._fetch_message_text("m_parent"))
         self.assertEqual(result, "@Alice hi")
-        # No [Mentioned:] wrapper — reply-context path intentionally skips the hint.
-        self.assertNotIn("[Mentioned:", result)
+        # No [提到:] wrapper — reply-context path intentionally skips the hint.
+        self.assertNotIn("[提到:", result)
 
     def test_extract_text_from_raw_content_accepts_mentions_kwarg(self):
         from gateway.platforms.feishu import FeishuAdapter
@@ -4757,7 +4864,7 @@ class TestFeishuMentionEndToEnd(unittest.TestCase):
                 {"key": "@_user_3", "open_id": "ou_bob", "name": "Bob"},
             ],
         )
-        self.assertIn("[Mentioned: Alice (open_id=ou_alice), Bob (open_id=ou_bob)]", event.text)
+        self.assertIn("[提到: Alice (open_id=ou_alice), Bob (open_id=ou_bob)]", event.text)
         self.assertIn("@Alice @Bob build me a group", event.text)
         self.assertNotIn("@Hermes", event.text)
 
@@ -4768,7 +4875,7 @@ class TestFeishuMentionEndToEnd(unittest.TestCase):
             "@_all meeting at 3pm",
             [{"key": "@_all"}],
         )
-        self.assertTrue(event.text.startswith("[Mentioned: @all]"))
+        self.assertTrue(event.text.startswith("[提到: @all]"))
         self.assertIn("@all meeting at 3pm", event.text)
 
     def test_scenario_trailing_self_mention_stripped(self):
@@ -4797,7 +4904,7 @@ class TestFeishuMentionEndToEnd(unittest.TestCase):
         adapter = self._build_adapter()
         event = self._run(adapter, "plain message", [])
         self.assertEqual(event.text, "plain message")
-        self.assertNotIn("[Mentioned:", event.text)
+        self.assertNotIn("[提到:", event.text)
 
     def test_scenario_post_at_alice_exposes_open_id(self):
         """Post-type @mention: <at> placeholder resolves via top-level mentions,
@@ -4833,12 +4940,12 @@ class TestFeishuMentionEndToEnd(unittest.TestCase):
             )
         )
         event = adapter._dispatch_inbound_event.call_args.args[0]
-        self.assertIn("[Mentioned: Alice (open_id=ou_alice)]", event.text)
+        self.assertIn("[提到: Alice (open_id=ou_alice)]", event.text)
         self.assertIn("@Alice lookup this doc", event.text)
 
     def test_scenario_post_bot_plus_alice_filters_self_from_hint(self):
         """Post-type message @-ing both the bot and Alice: leading bot is
-        stripped from the body, self is filtered from the [Mentioned: ...]
+        stripped from the body, self is filtered from the [提到: ...]
         hint, and Alice's real open_id is surfaced for the agent."""
         adapter = self._build_adapter()
         bot_mention = SimpleNamespace(
@@ -4878,7 +4985,7 @@ class TestFeishuMentionEndToEnd(unittest.TestCase):
         )
         event = adapter._dispatch_inbound_event.call_args.args[0]
         # Hint surfaces Alice; bot excluded because is_self=True.
-        self.assertIn("[Mentioned: Alice (open_id=ou_alice)]", event.text)
+        self.assertIn("[提到: Alice (open_id=ou_alice)]", event.text)
         self.assertNotIn("Hermes (open_id=", event.text)
         # Body: leading @Hermes stripped, Alice preserved, trailing text intact.
         self.assertIn("@Alice review the spec with Alice", event.text)

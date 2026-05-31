@@ -198,7 +198,7 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
 
   const skillsBody = () => {
     if (info.lazy && skillEntries.length === 0) {
-      return <InlineLoader label="scanning skills" t={t} />
+      return <InlineLoader label="正在扫描技能" t={t} />
     }
 
     const shown = skillEntries.slice(0, SKILLS_MAX)
@@ -213,7 +213,7 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
           </Text>
         ))}
         {overflow > 0 && (
-          <Text color={t.color.muted}>(and {overflow} more categories…)</Text>
+          <Text color={t.color.muted}>（另有 {overflow} 个分类…）</Text>
         )}
       </>
     )
@@ -236,7 +236,7 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
           </Text>
         ))}
         {overflow > 0 && (
-          <Text color={t.color.muted}>(and {overflow} more toolsets…)</Text>
+          <Text color={t.color.muted}>（另有 {overflow} 个工具集…）</Text>
         )}
       </>
     )
@@ -252,10 +252,10 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
           <Text color={t.color.muted}>: </Text>
           {s.connected ? (
             <Text color={t.color.text}>
-              {s.tools} tool{s.tools === 1 ? '' : 's'}
+              {s.tools} 个工具
             </Text>
           ) : (
-            <Text color={t.color.error}>failed</Text>
+            <Text color={t.color.error}>失败</Text>
           )}
         </Text>
       ))}
@@ -267,7 +267,7 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
 
   const systemBody = () => {
     if (sysPromptLen === 0) {
-      return <Text color={t.color.muted}>No system prompt loaded.</Text>
+      return <Text color={t.color.muted}>未加载系统提示词。</Text>
     }
 
     return (
@@ -295,7 +295,7 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
 
           {sid && (
             <Text>
-              <Text color={t.color.sessionLabel}>Session: </Text>
+              <Text color={t.color.sessionLabel}>会话： </Text>
               <Text color={t.color.sessionBorder}>{sid}</Text>
             </Text>
           )}
@@ -324,7 +324,7 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
             </Text>
             {sid && (
               <Text wrap="truncate-end">
-                <Text color={t.color.sessionLabel}>Session: </Text>
+                <Text color={t.color.sessionLabel}>会话： </Text>
                 <Text color={t.color.sessionBorder}>{sid}</Text>
               </Text>
             )}
@@ -337,7 +337,7 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
             onToggle={() => setToolsOpen(v => !v)}
             open={toolsOpen}
             t={t}
-            title="Available Tools"
+            title="可用工具"
           />
           {toolsOpen && toolsBody()}
         </Box>
@@ -348,9 +348,9 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
             count={skillsTotal}
             onToggle={() => setSkillsOpen(v => !v)}
             open={skillsOpen}
-            suffix={skillsCatCount > 0 ? `in ${skillsCatCount} categor${skillsCatCount === 1 ? 'y' : 'ies'}` : undefined}
+            suffix={skillsCatCount > 0 ? `分布在 ${skillsCatCount} 个分类` : undefined}
             t={t}
-            title="Available Skills"
+            title="可用技能"
           />
           {skillsOpen && skillsBody()}
         </Box>
@@ -361,9 +361,9 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
             <CollapseToggle
               onToggle={() => setSystemOpen(v => !v)}
               open={systemOpen}
-              suffix={`— ${sysPromptLen.toLocaleString()} chars`}
+              suffix={`— ${sysPromptLen.toLocaleString()} 字符`}
               t={t}
-              title="System Prompt"
+              title="系统提示词"
             />
             {systemOpen && systemBody()}
           </Box>
@@ -376,9 +376,9 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
               count={info.mcp_servers.length}
               onToggle={() => setMcpOpen(v => !v)}
               open={mcpOpen}
-              suffix="connected"
+              suffix="已连接"
               t={t}
-              title="MCP Servers"
+              title="MCP 服务"
             />
             {mcpOpen && mcpBody()}
           </Box>
@@ -387,26 +387,26 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
         <Text />
 
         <Text color={t.color.text}>
-          {toolsTotal} tools{' · '}
-          {skillsTotal} skills
+          {toolsTotal} 个工具{' · '}
+          {skillsTotal} 个技能
           {info.mcp_servers?.length ? ` · ${info.mcp_servers.length} MCP` : ''}
           {' · '}
-          <Text color={t.color.muted}>/help for commands</Text>
+          <Text color={t.color.muted}>/help 查看命令</Text>
         </Text>
 
         {typeof info.update_behind === 'number' && info.update_behind > 0 && (
           <Text bold color={t.color.warn}>
-            ! {info.update_behind} {info.update_behind === 1 ? 'commit' : 'commits'} behind
+            ! 落后 {info.update_behind} 个 commit
             <Text bold={false} color={t.color.warn} dimColor>
               {' '}
-              - run{' '}
+              - 运行{' '}
             </Text>
             <Text bold color={t.color.warn}>
               {info.update_command || 'hermes update'}
             </Text>
             <Text bold={false} color={t.color.warn} dimColor>
               {' '}
-              to update
+              更新
             </Text>
           </Text>
         )}

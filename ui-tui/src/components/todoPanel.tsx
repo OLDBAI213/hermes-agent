@@ -59,7 +59,7 @@ export const TodoPanel = memo(function TodoPanel({
         <Text color={t.color.muted}>
           <Text color={t.color.accent}>{effectiveCollapsed ? '▸ ' : '▾ '}</Text>
           <Text bold color={t.color.text}>
-            Todo
+            待办
           </Text>{' '}
           <Text color={t.color.statusFg} dim>
             ({done}/{todos.length})
@@ -67,7 +67,7 @@ export const TodoPanel = memo(function TodoPanel({
           {incomplete && pending > 0 && (
             <Text color={t.color.muted} dim>
               {' '}
-              · incomplete · {pending} still {pending === 1 ? 'pending' : 'pending/in_progress'}
+              · 未完成 · 仍有 {pending} 项待处理
             </Text>
           )}
         </Text>

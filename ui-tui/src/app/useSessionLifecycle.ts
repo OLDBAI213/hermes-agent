@@ -30,14 +30,14 @@ const usageFrom = (info: null | SessionInfo): Usage => (info?.usage ? { ...ZERO,
 
 const statusFromLiveSession = (status?: string, running = false) => {
   if (status === 'waiting') {
-    return 'waiting for input…'
+    return '等待输入…'
   }
 
   if (status === 'starting') {
-    return 'starting agent…'
+    return '正在启动 Agent…'
   }
 
-  return running || status === 'working' ? 'running…' : 'ready'
+  return running || status === 'working' ? '运行中…' : '就绪'
 }
 
 export const writeActiveSessionFile = (sessionId: null | string, file = process.env.HERMES_TUI_ACTIVE_SESSION_FILE) => {
@@ -158,7 +158,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
       if (setup?.provider_configured === false) {
         panel(SETUP_REQUIRED_TITLE, buildSetupRequiredSections())
-        patchUiState({ status: 'setup required' })
+        patchUiState({ status: '需要设置' })
 
         return null
       }
@@ -170,7 +170,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
       const r = await rpc<SessionCreateResponse>('session.create', { cols: colsRef.current })
 
       if (!r) {
-        patchUiState({ status: 'ready' })
+        patchUiState({ status: '就绪' })
 
         return null
       }
@@ -185,7 +185,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
       patchUiState({
         info,
         sid: r.session_id,
-        status: info?.version ? 'ready' : 'starting agent…',
+        status: info?.version ? '就绪' : '正在启动 Agent…',
         usage: usageFrom(info)
       })
 
@@ -194,11 +194,11 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
       }
 
       if (info?.credential_warning) {
-        sys(`warning: ${info.credential_warning}`)
+        sys(`警告：${info.credential_warning}`)
       }
 
       if (info?.config_warning) {
-        sys(`warning: ${info.config_warning}`)
+        sys(`警告：${info.config_warning}`)
       }
 
       if (msg) {
@@ -216,8 +216,8 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
             }
 
             const nextTitle = (result.title ?? requestedTitle).trim()
-            const suffix = result.pending ? ' (queued while session initializes)' : ''
-            sys(`session title set: ${nextTitle}${suffix}`)
+            const suffix = result.pending ? '（会话初始化中，已排队）' : ''
+            sys(`会话标题已设置：${nextTitle}${suffix}`)
           })
           .catch((err: unknown) => {
             if (getUiState().sid !== r.session_id) {
@@ -225,7 +225,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
             }
 
             const message = err instanceof Error ? err.message : String(err)
-            sys(`warning: failed to set session title: ${message}`)
+            sys(`警告：设置会话标题失败：${message}`)
           })
       }
 
@@ -240,7 +240,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
   )
 
   const newLiveSession = useCallback(
-    (msg = 'new live session started', title?: string) => {
+    (msg = '新的实时会话已启动', title?: string) => {
       patchOverlayState({ sessions: false })
 
       return startNewSession(msg, title, true)
@@ -251,16 +251,16 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
   const activateLiveSession = useCallback(
     (id: string) => {
       patchOverlayState({ sessions: false })
-      patchUiState({ status: 'switching session…' })
+      patchUiState({ status: '切换会话中…' })
 
       gw.request<SessionActivateResponse>('session.activate', { session_id: id })
         .then(raw => {
           const r = asRpcResult<SessionActivateResponse>(raw)
 
           if (!r) {
-            sys('error: invalid response: session.activate')
+            sys('错误：session.activate 返回无效响应')
 
-            return patchUiState({ status: 'ready' })
+            return patchUiState({ status: '就绪' })
           }
 
           const info = r.info ?? null
@@ -282,8 +282,8 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
           setTimeout(() => scrollRef.current?.scrollToBottom(), 0)
         })
         .catch((e: Error) => {
-          sys(`error: ${e.message}`)
-          patchUiState({ status: 'ready' })
+          sys(`错误：${e.message}`)
+          patchUiState({ status: '就绪' })
         })
     },
     [gw, resetSession, scrollRef, setHistoryItems, setSessionStartedAt, sys]
@@ -292,12 +292,12 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
   const resumeById = useCallback(
     (id: string) => {
       patchOverlayState({ picker: false })
-      patchUiState({ status: 'resuming…' })
+      patchUiState({ status: '恢复会话中…' })
 
       rpc<SetupStatusResponse>('setup.status', {}).then(setup => {
         if (setup?.provider_configured === false) {
           panel(SETUP_REQUIRED_TITLE, buildSetupRequiredSections())
-          patchUiState({ status: 'setup required' })
+          patchUiState({ status: '需要设置' })
 
           return
         }
@@ -309,9 +309,9 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
               const r = asRpcResult<SessionResumeResponse>(raw)
 
               if (!r) {
-                sys('error: invalid response: session.resume')
+                sys('错误：session.resume 返回无效响应')
 
-                return patchUiState({ status: 'ready' })
+                return patchUiState({ status: '就绪' })
               }
 
               resetSession()
@@ -324,14 +324,14 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
               patchUiState({
                 info: r.info ?? null,
                 sid: r.session_id,
-                status: 'ready',
+                status: '就绪',
                 usage: usageFrom(r.info ?? null)
               })
               setTimeout(() => scrollRef.current?.scrollToBottom(), 0)
             })
             .catch((e: Error) => {
-              sys(`error: ${e.message}`)
-              patchUiState({ status: 'ready' })
+              sys(`错误：${e.message}`)
+              patchUiState({ status: '就绪' })
             })
         )
       })
@@ -340,12 +340,12 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
   )
 
   const guardBusySessionSwitch = useCallback(
-    (what = 'switch sessions') => {
+    (what = '切换会话') => {
       if (!getUiState().busy) {
         return false
       }
 
-      sys(`interrupt the current turn before trying to ${what}`)
+      sys(`请先中断当前任务，再尝试 ${what}`)
 
       return true
     },

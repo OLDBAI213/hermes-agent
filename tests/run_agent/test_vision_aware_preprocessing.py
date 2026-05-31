@@ -207,3 +207,25 @@ class TestModelSupportsVision:
         with patch("hermes_cli.config.load_config", return_value={"model": {"supports_vision": False}}), \
              patch("agent.models_dev.get_model_capabilities", return_value=fake_caps):
             assert agent._model_supports_vision() is False
+
+    def test_forced_native_image_mode_overrides_unknown_capability_metadata(self):
+        agent = _make_agent()
+        with patch("hermes_cli.config.load_config", return_value={"agent": {"image_input_mode": "native"}}), \
+             patch("agent.models_dev.get_model_capabilities", return_value=None):
+            assert agent._model_supports_vision() is True
+
+    def test_known_text_only_model_is_not_forced_to_native(self):
+        agent = _make_agent()
+        fake_caps = MagicMock()
+        fake_caps.supports_vision = False
+        with patch("hermes_cli.config.load_config", return_value={"agent": {"image_input_mode": "native"}}), \
+             patch("agent.models_dev.get_model_capabilities", return_value=fake_caps):
+            assert agent._model_supports_vision() is False
+
+    def test_vision_capable_model_keeps_image_parts_with_native_mode(self):
+        agent = _make_agent()
+        fake_caps = MagicMock()
+        fake_caps.supports_vision = True
+        with patch("hermes_cli.config.load_config", return_value={"agent": {"image_input_mode": "native"}}), \
+             patch("agent.models_dev.get_model_capabilities", return_value=fake_caps):
+            assert agent._model_supports_vision() is True

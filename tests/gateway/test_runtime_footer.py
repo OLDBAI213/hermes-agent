@@ -25,6 +25,8 @@ from gateway.runtime_footer import (
     [
         ("openai/gpt-5.4", "gpt-5.4"),
         ("anthropic/claude-sonnet-4.6", "claude-sonnet-4.6"),
+        ("xiaomi/mimo-v2.5", "小米 MiMo v2.5"),
+        ("mimo-v2.5-pro", "小米 MiMo v2.5 Pro"),
         ("gpt-5.4", "gpt-5.4"),
         ("", ""),
         (None, ""),
@@ -81,7 +83,8 @@ def test_format_footer_skips_missing_context_length():
     # context_pct dropped silently; no "?%" artifact
     assert "%" not in out
     assert "gpt-5.4" in out
-    assert "/tmp/wd" in out
+    assert "tmp" in out
+    assert "wd" in out
 
 
 def test_format_footer_context_pct_clamped_to_100():

@@ -47,7 +47,7 @@ export const buildTuiDoctorReport = (
     `- 会话: ${ui.sid || '未连接'}`,
     `- 网关状态: ${ui.status}`,
     `- 状态栏: ${ui.statusBar}`,
-    `- 鼠标/滚轮跟踪: ${yesNo(ui.mouseTracking)}`,
+    `- 鼠标/滚轮跟踪: ${ui.mouseTracking}`,
     `- 细节模式: ${ui.detailsMode}`,
     `- 流式输出: ${yesNo(ui.streaming)}`,
     '',

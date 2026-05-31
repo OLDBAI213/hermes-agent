@@ -1973,6 +1973,24 @@ class TestAnthropicCompatImageConversion:
         assert img_block["source"]["media_type"] == "image/png"
         assert img_block["source"]["data"] == "iVBOR="
 
+    def test_inline_base64_image_converted(self):
+        from agent.auxiliary_client import _convert_openai_images_to_anthropic
+
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "describe"},
+                {"type": "image_url", "image_url": "data:image/png;base64,iVBOR="},
+            ],
+        }]
+
+        result = _convert_openai_images_to_anthropic(messages)
+        img_block = result[0]["content"][1]
+        assert img_block["type"] == "image"
+        assert img_block["source"]["type"] == "base64"
+        assert img_block["source"]["media_type"] == "image/png"
+        assert img_block["source"]["data"] == "iVBOR="
+
     def test_url_image_converted(self):
         from agent.auxiliary_client import _convert_openai_images_to_anthropic
         messages = [{

@@ -1204,7 +1204,7 @@ async def handle_drive_comment_event(
     )
     doc_meta, comment_detail = await asyncio.gather(meta_task, comment_task)
 
-    doc_title = doc_meta.get("title", "Untitled")
+    doc_title = doc_meta.get("title", "未命名文档")
     doc_url = doc_meta.get("url", "")
     is_whole = bool(comment_detail.get("is_whole"))
 

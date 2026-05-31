@@ -92,7 +92,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
         const sid = getUiState().sid
 
         if (!sid) {
-          return sys('session not ready yet')
+          return sys('会话尚未就绪')
         }
 
         turnController.clearStatusTimer()
@@ -103,27 +103,27 @@ export function useSubmission(opts: UseSubmissionOptions) {
           appendMessage({ role: 'user', text: displayText })
         }
 
-        patchUiState({ busy: true, status: 'running…' })
+        patchUiState({ busy: true, status: '运行中…' })
         turnController.bufRef = ''
         turnController.interrupted = false
 
         gw.request<PromptSubmitResponse>('prompt.submit', { session_id: sid, text: submitText }).catch((e: Error) => {
           if (isSessionBusyError(e)) {
             composerActions.enqueue(submitText)
-            patchUiState({ busy: true, status: 'queued for next turn' })
+            patchUiState({ busy: true, status: '已排队到下一轮' })
 
-            return sys(`queued: "${submitText.slice(0, 50)}${submitText.length > 50 ? '…' : ''}"`)
+            return sys(`已排队："${submitText.slice(0, 50)}${submitText.length > 50 ? '…' : ''}"`)
           }
 
-          sys(`error: ${e.message}`)
-          patchUiState({ busy: false, status: 'ready' })
+          sys(`错误：${e.message}`)
+          patchUiState({ busy: false, status: '就绪' })
         })
       }
 
       const sid = getUiState().sid
 
       if (!sid) {
-        return sys('session not ready yet')
+        return sys('会话尚未就绪')
       }
 
       // Always ask the backend whether this looks like a file drop.
@@ -138,7 +138,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
           if (r.is_image) {
             turnController.pushActivity(attachedImageNotice(r))
           } else {
-            turnController.pushActivity(`detected file: ${r.name}`)
+            turnController.pushActivity(`检测到文件：${r.name}`)
           }
 
           startSubmit(r.text || text, expand(r.text || text), showUserMessage)
@@ -151,14 +151,14 @@ export function useSubmission(opts: UseSubmissionOptions) {
   const shellExec = useCallback(
     (cmd: string) => {
       appendMessage({ role: 'user', text: `!${cmd}` })
-      patchUiState({ busy: true, status: 'running…' })
+      patchUiState({ busy: true, status: '运行中…' })
 
       gw.request<ShellExecResponse>('shell.exec', { command: cmd })
         .then(raw => {
           const r = asRpcResult<ShellExecResponse>(raw)
 
           if (!r) {
-            return sys('error: invalid response: shell.exec')
+            return sys('错误：shell.exec 返回无效响应')
           }
 
           const out = [r.stdout, r.stderr].filter(Boolean).join('\n').trim()
@@ -168,18 +168,18 @@ export function useSubmission(opts: UseSubmissionOptions) {
           }
 
           if (r.code !== 0 || !out) {
-            sys(`exit ${r.code}`)
+            sys(`退出码 ${r.code}`)
           }
         })
-        .catch((e: Error) => sys(`error: ${e.message}`))
-        .finally(() => patchUiState({ busy: false, status: 'ready' }))
+        .catch((e: Error) => sys(`错误：${e.message}`))
+        .finally(() => patchUiState({ busy: false, status: '就绪' }))
     },
     [appendMessage, gw, sys]
   )
 
   const interpolate = useCallback(
     (text: string, then: (result: string) => void) => {
-      patchUiState({ status: 'interpolating…' })
+      patchUiState({ status: '插入命令输出中…' })
       const matches = [...text.matchAll(new RegExp(INTERPOLATION_RE.source, 'g'))]
 
       Promise.all(
@@ -191,7 +191,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
 
               return [r?.stdout, r?.stderr].filter(Boolean).join('\n').trim()
             })
-            .catch(() => '(error)')
+            .catch(() => '（错误）')
         )
       ).then(results => then(spliceMatches(text, matches, results)))
     },
@@ -252,10 +252,10 @@ export function useSubmission(opts: UseSubmissionOptions) {
             const r = asRpcResult<SessionSteerResponse>(raw)
 
             if (r?.status !== 'queued') {
-              fallback('steer rejected — message queued for next turn')
+              fallback('转向被拒绝，消息已排队到下一轮')
             }
           })
-          .catch(() => fallback('steer failed — message queued for next turn'))
+          .catch(() => fallback('转向失败，消息已排队到下一轮'))
 
         return
       }

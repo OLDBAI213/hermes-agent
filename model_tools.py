@@ -261,6 +261,44 @@ def _clear_tool_defs_cache() -> None:
     _tool_defs_cache.clear()
 
 
+def _active_main_model_uses_native_image_input() -> bool:
+    """True when attached images should go directly to the main model."""
+    try:
+        from agent.auxiliary_client import _read_main_model, _read_main_provider
+        from agent.image_routing import decide_image_input_mode
+        from hermes_cli.config import load_config
+
+        return (
+            decide_image_input_mode(
+                _read_main_provider(),
+                _read_main_model(),
+                load_config(),
+            )
+            == "native"
+        )
+    except Exception:
+        return False
+
+
+def _filter_redundant_native_vision_tools(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Hide aux vision tools when the active model can see images itself."""
+    if not tools or not _active_main_model_uses_native_image_input():
+        return tools
+    if os.getenv("HERMES_KEEP_VISION_ANALYZE_TOOL", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return tools
+    return [
+        tool for tool in tools
+        if tool.get("function", {}).get("name") != "vision_analyze"
+    ]
+
+
 def get_tool_definitions(
     enabled_toolsets: List[str] = None,
     disabled_toolsets: List[str] = None,
@@ -301,6 +339,8 @@ def get_tool_definitions(
             registry._generation,
             cfg_fp,
             bool(os.environ.get("HERMES_KANBAN_TASK")),
+            _active_main_model_uses_native_image_input(),
+            bool(os.environ.get("HERMES_KEEP_VISION_ANALYZE_TOOL")),
         )
         cached = _tool_defs_cache.get(cache_key)
         if cached is not None:
@@ -458,6 +498,8 @@ def _compute_tool_definitions(
                         "function": {**td["function"], "description": desc},
                     }
                     break
+
+    filtered_tools = _filter_redundant_native_vision_tools(filtered_tools)
 
     if not quiet_mode:
         if filtered_tools:

@@ -17,6 +17,7 @@ Lifecycle (called by MemoryManager, wired in run_agent.py):
   system_prompt_block()  — static text for the system prompt
   prefetch(query)        — background recall before each turn
   sync_turn(user, asst)  — async write after each turn
+  check_tool_safety()    — optional pre-tool safety gate
   get_tool_schemas()     — tool schemas to expose to the model
   handle_tool_call()     — dispatch a tool call
   shutdown()             — clean exit
@@ -129,6 +130,20 @@ class MemoryProvider(ABC):
         completed turn, including any assistant tool calls and tool results.
         Providers that do not need raw turn context can ignore it.
         """
+
+    def check_tool_safety(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        **kwargs,
+    ) -> Optional[str]:
+        """Optional pre-tool safety gate.
+
+        Return None to allow execution. Return a non-empty string to signal
+        either a hard block (e.g. ``"BLOCKED by memory: ..."``) or a warning
+        (e.g. ``"WARNING by memory: ..."``) that runtime code may surface.
+        """
+        return None
 
     @abstractmethod
     def get_tool_schemas(self) -> List[Dict[str, Any]]:

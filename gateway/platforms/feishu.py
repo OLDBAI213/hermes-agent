@@ -3344,7 +3344,22 @@ class FeishuAdapter(BasePlatformAdapter):
             if _show_start_msg and event.source and self._client:
                 chat_id = getattr(event.source, "chat_id", None)
                 if chat_id:
-                    start_text = "已收到，正在思考..."
+                    # 构建状态卡
+                    start_text = "⏳ 已收到，正在思考..."
+                    # 尝试获取模型和提供商信息
+                    try:
+                        from hermes_cli.config import load_config
+                        _hermes_cfg = load_config()
+                        _model = _hermes_cfg.get("model", {}).get("default", "")
+                        _provider = _hermes_cfg.get("model", {}).get("provider", "")
+                        if _model:
+                            start_text += f"
+模型：{_model}"
+                        if _provider:
+                            start_text += f"
+服务商：{_provider}"
+                    except Exception:
+                        pass
                     post_payload = json.dumps(
                         {"zh_cn": {"title": "", "content": [[{"tag": "text", "text": start_text}]]}},
                         ensure_ascii=False,

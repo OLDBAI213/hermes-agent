@@ -72,13 +72,13 @@ const RESET_WORDS = new Set(['reset', 'clear', 'default'])
 const CYCLE_WORDS = new Set(['cycle', 'toggle'])
 
 const DETAILS_USAGE =
-  'usage: /details [hidden|collapsed|expanded|cycle]  or  /details <section> [hidden|collapsed|expanded|reset]'
+  '用法: /details [hidden|collapsed|expanded|cycle]  或  /details <section> [hidden|collapsed|expanded|reset]'
 
-const DETAILS_SECTION_USAGE = 'usage: /details <section> [hidden|collapsed|expanded|reset]'
+const DETAILS_SECTION_USAGE = '用法: /details <section> [hidden|collapsed|expanded|reset]'
 
 export const coreCommands: SlashCommand[] = [
   {
-    help: 'list commands + hotkeys',
+    help: '列出命令和快捷键',
     name: 'help',
     run: (_arg, ctx) => {
       const sections: PanelSection[] = (ctx.local.catalog?.categories ?? []).map(cat => ({
@@ -87,22 +87,24 @@ export const coreCommands: SlashCommand[] = [
       }))
 
       if (ctx.local.catalog?.skillCount) {
-        sections.push({ text: `${ctx.local.catalog.skillCount} skill commands available — /skills to browse` })
+        sections.push({ text: `${ctx.local.catalog.skillCount} 个技能命令可用，可用 /skills 浏览` })
       }
 
       sections.push(
         {
           rows: [
-            ['/details [hidden|collapsed|expanded|cycle]', 'set global agent detail visibility mode'],
+            ['/details [hidden|collapsed|expanded|cycle]', '设置全局 Agent 详情显示模式'],
             [
               '/details <section> [hidden|collapsed|expanded|reset]',
-              'override one section (thinking/tools/subagents/activity)'
+              '覆盖单个分区（thinking/tools/subagents/activity）'
             ],
-            ['/fortune [random|daily]', 'show a random or daily local fortune']
+            ['/fortune [random|daily]', '显示随机或每日本地签语'],
+            ['/tui-doctor', '查看 TUI 扩展和模块运行状态'],
+            ['/tui-module-smoke [state|clear]', '渲染或清理本地 TUI 模块烟测快照']
           ],
           title: 'TUI'
         },
-        { rows: HOTKEYS, title: 'Hotkeys' }
+        { rows: HOTKEYS, title: '快捷键' }
       )
 
       ctx.transcript.panel(ctx.ui.theme.brand.helpHeader, sections)
@@ -111,16 +113,16 @@ export const coreCommands: SlashCommand[] = [
 
   {
     aliases: ['exit'],
-    help: 'exit hermes',
+    help: '退出 Hermes',
     name: 'quit',
     run: (_arg, ctx) => ctx.session.die()
   },
 
   {
-    help: 'update Hermes Agent to the latest version (exits TUI)',
+    help: '更新 Hermes Agent 到最新版本（会退出 TUI）',
     name: 'update',
     run: (_arg, ctx) => {
-      ctx.transcript.sys('exiting TUI to run update...')
+      ctx.transcript.sys('正在退出 TUI 并运行更新...')
       // Exit code 42 signals the Python wrapper to exec `hermes update`.
       // Use dieWithCode for proper cleanup (gateway kill + Ink unmount).
       setTimeout(() => ctx.session.dieWithCode(42), 100)
@@ -129,26 +131,26 @@ export const coreCommands: SlashCommand[] = [
 
   {
     aliases: ['scroll'],
-    help: 'set mouse tracking preset [on|off|toggle|wheel|buttons|all]',
+    help: '设置鼠标跟踪模式 [on|off|toggle|wheel|buttons|all]',
     name: 'mouse',
     run: (arg, ctx) => {
       const current = ctx.ui.mouseTracking
       const next = mouseModeFromArg(arg, current)
 
       if (next === null) {
-        return ctx.transcript.sys('usage: /mouse [on|off|toggle|wheel|buttons|all]')
+        return ctx.transcript.sys('用法: /mouse [on|off|toggle|wheel|buttons|all]')
       }
 
       patchUiState({ mouseTracking: next })
       ctx.gateway.rpc<ConfigSetResponse>('config.set', { key: 'mouse', value: next }).catch(() => {})
 
-      queueMicrotask(() => ctx.transcript.sys(`mouse tracking ${next}`))
+      queueMicrotask(() => ctx.transcript.sys(`鼠标跟踪：${next}`))
     }
   },
 
   {
     aliases: ['new'],
-    help: 'start a new session',
+    help: '开始新会话',
     name: 'clear',
     run: (arg, ctx, cmd) => {
       if (ctx.session.guardBusySessionSwitch('switch sessions')) {
@@ -159,8 +161,8 @@ export const coreCommands: SlashCommand[] = [
       const requestedTitle = isNew ? arg.trim() : ''
 
       const commit = () => {
-        patchUiState({ status: 'forging session…' })
-        ctx.session.newSession(isNew ? 'new session started' : undefined, requestedTitle || undefined)
+        patchUiState({ status: '正在创建会话…' })
+        ctx.session.newSession(isNew ? '新会话已开始' : undefined, requestedTitle || undefined)
       }
 
       if (NO_CONFIRM_DESTRUCTIVE) {
@@ -169,43 +171,43 @@ export const coreCommands: SlashCommand[] = [
 
       patchOverlayState({
         confirm: {
-          cancelLabel: 'No, keep going',
-          confirmLabel: isNew ? 'Yes, start a new session' : 'Yes, clear the session',
+          cancelLabel: '不，继续当前会话',
+          confirmLabel: isNew ? '确认开始新会话' : '确认清空当前会话',
           danger: true,
-          detail: 'This ends the current conversation and clears the transcript.',
+          detail: '这会结束当前对话并清空当前转写记录。',
           onConfirm: commit,
-          title: isNew ? 'Start a new session?' : 'Clear the current session?'
+          title: isNew ? '开始新会话？' : '清空当前会话？'
         }
       })
     }
   },
 
   {
-    help: 'force a full UI repaint',
+    help: '强制重绘界面',
     name: 'redraw',
     run: (_arg, ctx) => {
       forceRedraw(process.stdout)
-      ctx.transcript.sys('ui redrawn')
+      ctx.transcript.sys('界面已重绘')
     }
   },
 
   {
-    help: 'show live session info',
+    help: '显示当前会话状态',
     name: 'status',
     run: (_arg, ctx) => {
       if (!ctx.sid) {
-        return ctx.transcript.sys('no active session')
+        return ctx.transcript.sys('没有活动会话')
       }
 
       ctx.gateway
         .rpc<SessionStatusResponse>('session.status', { session_id: ctx.sid })
-        .then(ctx.guarded<SessionStatusResponse>(r => ctx.transcript.page(r.output || '(no status)', 'Status')))
+        .then(ctx.guarded<SessionStatusResponse>(r => ctx.transcript.page(r.output || '（无状态）', '状态')))
         .catch(ctx.guardedErr)
     }
   },
 
   {
-    help: 'resume a prior session',
+    help: '恢复历史会话',
     name: 'resume',
     run: (arg, ctx) => {
       if (ctx.session.guardBusySessionSwitch('switch sessions')) {
@@ -217,11 +219,11 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'set or show current session title',
+    help: '设置或显示当前会话标题',
     name: 'title',
     run: (arg, ctx) => {
       if (!ctx.sid) {
-        return ctx.transcript.sys('no active session')
+        return ctx.transcript.sys('没有活动会话')
       }
 
       const title = arg.trim()
@@ -232,7 +234,7 @@ export const coreCommands: SlashCommand[] = [
           .then(
             ctx.guarded<SessionTitleResponse>(r => {
               const current = (r?.title ?? '').trim()
-              ctx.transcript.sys(current ? `title: ${current}` : 'no title set')
+              ctx.transcript.sys(current ? `标题：${current}` : '尚未设置标题')
             })
           )
           .catch(ctx.guardedErr)
@@ -241,7 +243,7 @@ export const coreCommands: SlashCommand[] = [
       }
 
       if (!title) {
-        return ctx.transcript.sys('usage: /title <your session title>')
+        return ctx.transcript.sys('用法: /title <会话标题>')
       }
 
       ctx.gateway
@@ -249,8 +251,8 @@ export const coreCommands: SlashCommand[] = [
         .then(
           ctx.guarded<SessionTitleResponse>(r => {
             const next = (r?.title ?? title).trim()
-            const suffix = r?.pending ? ' (queued while session initializes)' : ''
-            ctx.transcript.sys(`session title set: ${next}${suffix}`)
+            const suffix = r?.pending ? '（会话初始化中，已排队）' : ''
+            ctx.transcript.sys(`会话标题已设置：${next}${suffix}`)
           })
         )
         .catch(ctx.guardedErr)
@@ -258,25 +260,25 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'toggle compact transcript',
+    help: '切换紧凑转写显示',
     name: 'compact',
     run: (arg, ctx) => {
       const next = flagFromArg(arg, ctx.ui.compact)
 
       if (next === null) {
-        return ctx.transcript.sys('usage: /compact [on|off|toggle]')
+        return ctx.transcript.sys('用法: /compact [on|off|toggle]')
       }
 
       patchUiState({ compact: next })
       ctx.gateway.rpc<ConfigSetResponse>('config.set', { key: 'compact', value: next ? 'on' : 'off' }).catch(() => {})
 
-      queueMicrotask(() => ctx.transcript.sys(`compact ${next ? 'on' : 'off'}`))
+      queueMicrotask(() => ctx.transcript.sys(`紧凑显示：${next ? '开启' : '关闭'}`))
     }
   },
 
   {
     aliases: ['detail'],
-    help: 'control agent detail visibility (global or per-section)',
+    help: '控制 Agent 详情显示',
     name: 'details',
     run: (arg, ctx) => {
       const { gateway, transcript, ui } = ctx
@@ -296,9 +298,9 @@ export const coreCommands: SlashCommand[] = [
               .map(s => `${s}=${ui.sections[s]}`)
               .join(' ')
 
-            transcript.sys(`details: ${mode}${overrides ? `  (${overrides})` : ''}`)
+            transcript.sys(`详情显示：${mode}${overrides ? `（${overrides}）` : ''}`)
           })
-          .catch(() => !ctx.stale() && transcript.sys(`details: ${ui.detailsMode}`))
+          .catch(() => !ctx.stale() && transcript.sys(`详情显示：${ui.detailsMode}`))
 
         return
       }
@@ -319,7 +321,7 @@ export const coreCommands: SlashCommand[] = [
         gateway
           .rpc<ConfigSetResponse>('config.set', { key: `details_mode.${first}`, value: mode ?? '' })
           .catch(() => {})
-        transcript.sys(`details ${first}: ${mode ?? 'reset'}`)
+        transcript.sys(`详情分区 ${first}：${mode ?? '重置'}`)
 
         return
       }
@@ -334,12 +336,12 @@ export const coreCommands: SlashCommand[] = [
 
       patchUiState({ detailsMode: next, detailsModeCommandOverride: true, sections })
       gateway.rpc<ConfigSetResponse>('config.set', { key: 'details_mode', value: next }).catch(() => {})
-      transcript.sys(`details: ${next}`)
+      transcript.sys(`详情显示：${next}`)
     }
   },
 
   {
-    help: 'local fortune',
+    help: '本地签语',
     name: 'fortune',
     run: (arg, ctx) => {
       const key = arg.trim().toLowerCase()
@@ -352,12 +354,12 @@ export const coreCommands: SlashCommand[] = [
         return ctx.transcript.sys(dailyFortune(ctx.sid))
       }
 
-      ctx.transcript.sys('usage: /fortune [random|daily]')
+      ctx.transcript.sys('用法: /fortune [random|daily]')
     }
   },
 
   {
-    help: 'copy selection or assistant message',
+    help: '复制选区或助手消息',
     name: 'copy',
     run: async (arg, ctx) => {
       const { sys } = ctx.transcript
@@ -366,23 +368,21 @@ export const coreCommands: SlashCommand[] = [
         const text = await ctx.composer.selection.copySelection()
 
         if (text) {
-          return sys(`copied ${text.length} characters`)
+          return sys(`已复制 ${text.length} 个字符`)
         } else {
-          return sys(
-            'clipboard copy failed — try HERMES_TUI_FORCE_OSC52=1 to force the escape sequence'
-          )
+          return sys('剪贴板复制失败，可尝试 HERMES_TUI_FORCE_OSC52=1 强制使用转义序列')
         }
       }
 
       if (arg && Number.isNaN(parseInt(arg, 10))) {
-        return sys('usage: /copy [number]')
+        return sys('用法: /copy [number]')
       }
 
       const all = ctx.local.getHistoryItems().filter(m => m.role === 'assistant')
       const target = all[arg ? Math.min(parseInt(arg, 10), all.length) - 1 : all.length - 1]
 
       if (!target) {
-        return sys('nothing to copy — start a conversation first')
+        return sys('没有可复制内容，请先开始对话')
       }
 
       void writeClipboardText(target.text)
@@ -392,34 +392,34 @@ export const coreCommands: SlashCommand[] = [
           }
 
           if (nativeOk) {
-            sys('copied to clipboard')
+            sys('已复制到剪贴板')
           } else {
             writeOsc52Clipboard(target.text)
-            sys('sent OSC52 copy sequence (terminal support required)')
+            sys('已发送 OSC52 复制序列（需要终端支持）')
           }
         })
         .catch(error => {
           if (!ctx.stale()) {
-            sys(`copy failed: ${String(error)}`)
+            sys(`复制失败：${String(error)}`)
           }
         })
     }
   },
 
   {
-    help: 'attach clipboard image',
+    help: '附加剪贴板图片',
     name: 'paste',
-    run: (arg, ctx) => (arg ? ctx.transcript.sys('usage: /paste') : ctx.composer.paste())
+    run: (arg, ctx) => (arg ? ctx.transcript.sys('用法: /paste') : ctx.composer.paste())
   },
 
   {
-    help: 'configure IDE terminal keybindings for multiline + undo/redo',
+    help: '配置 IDE 终端多行和撤销快捷键',
     name: 'terminal-setup',
     run: (arg, ctx) => {
       const target = arg.trim().toLowerCase()
 
       if (target && !['auto', 'cursor', 'vscode', 'windsurf'].includes(target)) {
-        return ctx.transcript.sys('usage: /terminal-setup [auto|vscode|cursor|windsurf]')
+        return ctx.transcript.sys('用法: /terminal-setup [auto|vscode|cursor|windsurf]')
       }
 
       const runner =
@@ -436,29 +436,29 @@ export const coreCommands: SlashCommand[] = [
           ctx.transcript.sys(result.message)
 
           if (result.success && result.requiresRestart) {
-            ctx.transcript.sys('restart the IDE terminal for the new keybindings to take effect')
+            ctx.transcript.sys('请重启 IDE 终端，让新的快捷键生效')
           }
         })
         .catch(error => {
           if (!ctx.stale()) {
-            ctx.transcript.sys(`terminal setup failed: ${String(error)}`)
+            ctx.transcript.sys(`终端快捷键设置失败：${String(error)}`)
           }
         })
     }
   },
 
   {
-    help: 'view gateway logs',
+    help: '查看 gateway 日志',
     name: 'logs',
     run: (arg, ctx) => {
       const text = ctx.gateway.gw.getLogTail(Math.min(80, Math.max(1, parseInt(arg, 10) || 20)))
 
-      text ? ctx.transcript.page(text, 'Logs') : ctx.transcript.sys('no gateway logs')
+      text ? ctx.transcript.page(text, '日志') : ctx.transcript.sys('没有 gateway 日志')
     }
   },
 
   {
-    help: 'view current transcript (user + assistant messages)',
+    help: '查看当前转写记录（用户和助手消息）',
     name: 'history',
     run: (arg, ctx) => {
       // The CLI-side `/history` runs in a detached slash-worker subprocess
@@ -468,25 +468,25 @@ export const coreCommands: SlashCommand[] = [
       const items = ctx.local.getHistoryItems().filter(m => m.role === 'user' || m.role === 'assistant')
 
       if (!items.length) {
-        return ctx.transcript.sys('no conversation yet')
+        return ctx.transcript.sys('还没有对话')
       }
 
       const preview = Math.max(80, parseInt(arg, 10) || 400)
 
       const lines = items.map((m, i) => {
-        const tag = m.role === 'user' ? `You #${i + 1}` : `Hermes #${i + 1}`
-        const body = m.text.trim() || (m.tools?.length ? `(${m.tools.length} tool calls)` : '(empty)')
+        const tag = m.role === 'user' ? `你 #${i + 1}` : `Hermes #${i + 1}`
+        const body = m.text.trim() || (m.tools?.length ? `(${m.tools.length} 次工具调用)` : '(空)')
         const clipped = body.length > preview ? `${body.slice(0, preview).trimEnd()}…` : body
 
         return `[${tag}]\n${clipped}`
       })
 
-      ctx.transcript.page(lines.join('\n\n'), 'History')
+      ctx.transcript.page(lines.join('\n\n'), '历史记录')
     }
   },
 
   {
-    help: 'save the current transcript to JSON',
+    help: '把当前转写记录保存为 JSON',
     name: 'save',
     run: (_arg, ctx) => {
       const hasConversation = ctx.local
@@ -494,11 +494,11 @@ export const coreCommands: SlashCommand[] = [
         .some(m => m.role === 'user' || m.role === 'assistant' || m.role === 'tool')
 
       if (!hasConversation) {
-        return ctx.transcript.sys('no conversation yet')
+        return ctx.transcript.sys('还没有对话')
       }
 
       if (!ctx.sid) {
-        return ctx.transcript.sys('no active session — nothing to save')
+        return ctx.transcript.sys('没有活动会话，无法保存')
       }
 
       ctx.gateway
@@ -508,9 +508,9 @@ export const coreCommands: SlashCommand[] = [
             const file = r?.file
 
             if (file) {
-              ctx.transcript.sys(`conversation saved to: ${file}`)
+              ctx.transcript.sys(`会话已保存到：${file}`)
             } else {
-              ctx.transcript.sys('failed to save')
+              ctx.transcript.sys('保存失败')
             }
           })
         )
@@ -520,7 +520,7 @@ export const coreCommands: SlashCommand[] = [
 
   {
     aliases: ['sb'],
-    help: 'status bar position (on|off|top|bottom)',
+    help: '状态栏位置 [on|off|top|bottom]',
     name: 'statusbar',
     run: (arg, ctx) => {
       const mode = arg.trim().toLowerCase()
@@ -536,38 +536,38 @@ export const coreCommands: SlashCommand[] = [
               : null
 
       if (!next) {
-        return ctx.transcript.sys('usage: /statusbar [on|off|top|bottom|toggle]')
+        return ctx.transcript.sys('用法: /statusbar [on|off|top|bottom|toggle]')
       }
 
       patchUiState({ statusBar: next })
       ctx.gateway.rpc<ConfigSetResponse>('config.set', { key: 'statusbar', value: next }).catch(() => {})
 
-      queueMicrotask(() => ctx.transcript.sys(`status bar ${next}`))
+      queueMicrotask(() => ctx.transcript.sys(`状态栏：${next}`))
     }
   },
 
   {
     aliases: ['q'],
-    help: 'inspect or enqueue a message',
+    help: '查看或加入排队消息',
     name: 'queue',
     run: (arg, ctx) => {
       if (!arg) {
-        return ctx.transcript.sys(`${ctx.composer.queueRef.current.length} queued message(s)`)
+        return ctx.transcript.sys(`${ctx.composer.queueRef.current.length} 条排队消息`)
       }
 
       ctx.composer.enqueue(arg)
-      ctx.transcript.sys(`queued: "${arg.slice(0, 50)}${arg.length > 50 ? '…' : ''}"`)
+      ctx.transcript.sys(`已排队："${arg.slice(0, 50)}${arg.length > 50 ? '…' : ''}"`)
     }
   },
 
   {
-    help: 'inject a message after the next tool call (no interrupt)',
+    help: '在下一次工具调用后插入消息（不中断）',
     name: 'steer',
     run: (arg, ctx) => {
       const payload = arg?.trim() ?? ''
 
       if (!payload) {
-        return ctx.transcript.sys('usage: /steer <prompt>')
+        return ctx.transcript.sys('用法: /steer <prompt>')
       }
 
       // If the agent isn't running, fall back to the queue so the user's
@@ -575,7 +575,7 @@ export const coreCommands: SlashCommand[] = [
       if (!ctx.ui.busy || !ctx.sid) {
         ctx.composer.enqueue(payload)
         ctx.transcript.sys(
-          `no active turn — queued for next: "${payload.slice(0, 50)}${payload.length > 50 ? '…' : ''}"`
+          `当前没有运行中的任务，已排队到下一轮："${payload.slice(0, 50)}${payload.length > 50 ? '…' : ''}"`
         )
 
         return
@@ -587,10 +587,10 @@ export const coreCommands: SlashCommand[] = [
           ctx.guarded<SessionSteerResponse>(r => {
             if (r?.status === 'queued') {
               ctx.transcript.sys(
-                `steer queued — arrives after next tool call: "${payload.slice(0, 50)}${payload.length > 50 ? '…' : ''}"`
+                `steer 已排队，会在下一次工具调用后送达："${payload.slice(0, 50)}${payload.length > 50 ? '…' : ''}"`
               )
             } else {
-              ctx.transcript.sys('steer rejected')
+              ctx.transcript.sys('插入消息被拒绝')
             }
           })
         )
@@ -599,20 +599,20 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'undo last exchange',
+    help: '撤销上一轮对话',
     name: 'undo',
     run: (_arg, ctx) => {
       if (!ctx.sid) {
-        return ctx.transcript.sys('nothing to undo')
+        return ctx.transcript.sys('没有可撤销内容')
       }
 
       ctx.gateway.rpc<SessionUndoResponse>('session.undo', { session_id: ctx.sid }).then(
         ctx.guarded<SessionUndoResponse>(r => {
           if ((r.removed ?? 0) > 0) {
             ctx.transcript.setHistoryItems((prev: Msg[]) => ctx.transcript.trimLastExchange(prev))
-            ctx.transcript.sys(`undid ${r.removed} messages`)
+            ctx.transcript.sys(`已撤销 ${r.removed} 条消息`)
           } else {
-            ctx.transcript.sys('nothing to undo')
+            ctx.transcript.sys('没有可撤销内容')
           }
         })
       )
@@ -620,13 +620,13 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'retry last user message',
+    help: '重试上一条用户消息',
     name: 'retry',
     run: (_arg, ctx) => {
       const last = ctx.local.getLastUserMsg()
 
       if (!last) {
-        return ctx.transcript.sys('nothing to retry')
+        return ctx.transcript.sys('没有可重试内容')
       }
 
       if (!ctx.sid) {
@@ -636,7 +636,7 @@ export const coreCommands: SlashCommand[] = [
       ctx.gateway.rpc<SessionUndoResponse>('session.undo', { session_id: ctx.sid }).then(
         ctx.guarded<SessionUndoResponse>(r => {
           if ((r.removed ?? 0) <= 0) {
-            return ctx.transcript.sys('nothing to retry')
+            return ctx.transcript.sys('没有可重试内容')
           }
 
           ctx.transcript.setHistoryItems((prev: Msg[]) => ctx.transcript.trimLastExchange(prev))

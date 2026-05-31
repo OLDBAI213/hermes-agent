@@ -35,7 +35,8 @@ import type {
   SectionVisibility,
   SubagentNode,
   SubagentProgress,
-  ThinkingMode
+  ThinkingMode,
+  TurnPhase
 } from '../types.js'
 
 const THINK: BrailleSpinnerName[] = ['helix', 'breathe', 'orbit', 'dna', 'waverows', 'snake', 'pulse']
@@ -421,7 +422,7 @@ function SubagentAccordion({
           }}
           open={openThinking}
           t={t}
-          title="Thinking"
+          title="💭 思考"
         />
       ),
       key: 'thinking',
@@ -454,7 +455,7 @@ function SubagentAccordion({
           }}
           open={openTools}
           t={t}
-          title="Tool calls"
+          title="🧰 工具调用"
         />
       ),
       key: 'tools',
@@ -495,7 +496,7 @@ function SubagentAccordion({
           }}
           open={openNotes}
           t={t}
-          title="Progress"
+          title="📈 进度"
           tone={statusTone}
         />
       ),
@@ -536,7 +537,7 @@ function SubagentAccordion({
           open={openKids}
           suffix={`d${item.depth + 1} · ${aggregate.descendantCount} total`}
           t={t}
-          title="Spawned"
+          title="🌿 已启动子任务"
         />
       ),
       key: 'subagents',
@@ -701,6 +702,7 @@ export const ToolTrail = memo(function ToolTrail({
   tools = [],
   toolTokens,
   trail = [],
+  turnPhase,
   activity = []
 }: {
   busy?: boolean
@@ -717,6 +719,7 @@ export const ToolTrail = memo(function ToolTrail({
   tools?: ActiveTool[]
   toolTokens?: number
   trail?: string[]
+  turnPhase?: null | TurnPhase
   activity?: ActivityItem[]
 }) {
   const visible = useMemo(
@@ -780,7 +783,8 @@ export const ToolTrail = memo(function ToolTrail({
     !activity.length &&
     !cot &&
     !reasoningActive &&
-    !outcome
+    !outcome &&
+    !turnPhase
   ) {
     return null
   }
@@ -860,7 +864,7 @@ export const ToolTrail = memo(function ToolTrail({
         ? [
             {
               color: t.color.muted,
-              content: `Args:\n${boundedLiveRenderText(tool.verboseArgs)}`,
+              content: `参数：\n${boundedLiveRenderText(tool.verboseArgs)}`,
               dimColor: true,
               key: `${tool.id}-args`
             }
@@ -1015,11 +1019,11 @@ export const ToolTrail = memo(function ToolTrail({
             <Text color={t.color.accent}>{openThinking ? '▾ ' : '▸ '}</Text>
             {thinkingLive ? (
               <Text bold color={t.color.text}>
-                Thinking
+                💭 思考
               </Text>
             ) : (
               <Text color={t.color.muted} dim>
-                Thinking
+                💭 思考
               </Text>
             )}
             {thinkingTokensLabel ? (
@@ -1062,7 +1066,7 @@ export const ToolTrail = memo(function ToolTrail({
           open={openTools}
           suffix={toolTokensLabel}
           t={t}
-          title="Tool calls"
+          title="🧰 工具调用"
         />
       ),
       key: 'tools',
@@ -1127,7 +1131,7 @@ export const ToolTrail = memo(function ToolTrail({
           open={openSubagents}
           suffix={suffix}
           t={t}
-          title="Spawn tree"
+          title="🌿 子任务树"
         />
       ),
       key: 'subagents',
@@ -1150,7 +1154,7 @@ export const ToolTrail = memo(function ToolTrail({
           }}
           open={openMeta}
           t={t}
-          title="Activity"
+          title="📡 活动"
           tone={metaTone}
         />
       ),

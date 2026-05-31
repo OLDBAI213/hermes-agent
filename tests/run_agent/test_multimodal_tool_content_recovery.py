@@ -14,6 +14,8 @@ Covers the full chain for providers that reject list-type content in
      text summary when the (provider, model) is in the cache, even though
      ``_model_supports_vision`` returns True — avoiding a wasted round
      trip on every subsequent screenshot in the session.
+  4. Xiaomi MiMo no longer preemptively downgrades user images: the image
+     router now emits the standard nested OpenAI-compatible image_url shape.
 
 The end-to-end retry loop wiring (`conversation_loop.py`) is exercised by
 the classifier signal + helper-mutation tests; the integration only adds
@@ -182,7 +184,7 @@ class TestToolResultContentShortCircuit:
         }
 
     def test_returns_list_when_cache_empty_and_vision_supported(self, monkeypatch):
-        agent = _make_agent(provider="xiaomi", model="mimo-v2.5")
+        agent = _make_agent(provider="openai", model="gpt-4o")
         agent._no_list_tool_content_models = set()  # explicit empty
         monkeypatch.setattr(agent, "_model_supports_vision", lambda: True)
         out = agent._tool_result_content_for_active_model(
@@ -204,11 +206,21 @@ class TestToolResultContentShortCircuit:
         assert "data:image" not in out
         assert "image_url" not in out
 
+    def test_xiaomi_no_longer_preemptively_returns_text_summary(self, monkeypatch):
+        agent = _make_agent(provider="xiaomi", model="mimo-v2.5")
+        agent._no_list_tool_content_models = set()
+        monkeypatch.setattr(agent, "_model_supports_vision", lambda: True)
+        out = agent._tool_result_content_for_active_model(
+            "computer_use", self._multimodal_result()
+        )
+        assert isinstance(out, list)
+        assert any(p.get("type") == "image_url" for p in out)
+
     def test_cache_miss_on_different_model(self, monkeypatch):
         """Cache is per (provider, model). A cached entry for mimo-v2.5
         must NOT affect a session running on a different model.
         """
-        agent = _make_agent(provider="xiaomi", model="mimo-v2.5-pro")
+        agent = _make_agent(provider="openai", model="gpt-4o")
         agent._no_list_tool_content_models = {("xiaomi", "mimo-v2.5")}
         monkeypatch.setattr(agent, "_model_supports_vision", lambda: True)
         out = agent._tool_result_content_for_active_model(
@@ -220,13 +232,35 @@ class TestToolResultContentShortCircuit:
         """Tests that build agents via ``object.__new__`` without calling
         ``__init__`` must not crash — the cache attribute may be absent.
         """
-        agent = _make_agent()
+        agent = _make_agent(provider="openai", model="gpt-4o")
         # Deliberately do not assign _no_list_tool_content_models.
         monkeypatch.setattr(agent, "_model_supports_vision", lambda: True)
         out = agent._tool_result_content_for_active_model(
             "computer_use", self._multimodal_result()
         )
         assert isinstance(out, list)
+
+
+class TestApiMessageImagePreprocessing:
+    def test_xiaomi_user_image_parts_pass_through(self, monkeypatch):
+        agent = _make_agent(provider="xiaomi", model="mimo-v2.5")
+        monkeypatch.setattr(agent, "_model_supports_vision", lambda: True)
+        monkeypatch.setattr(
+            agent,
+            "_preprocess_anthropic_content",
+            lambda content, role: f"{role}: converted image to text",
+        )
+        messages = [
+            {"role": "user", "content": [
+                {"type": "text", "text": "看图"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,X"}},
+            ]},
+        ]
+
+        out = agent._prepare_messages_for_non_vision_model(messages)
+
+        assert out is messages
+        assert out[0]["content"][1]["type"] == "image_url"
 
 
 # ─── Classifier ──────────────────────────────────────────────────────────────

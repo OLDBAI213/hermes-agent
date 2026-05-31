@@ -24,10 +24,10 @@ const STATUS_GLYPH: Record<string, string> = {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  idle: 'idle',
-  starting: 'starting',
-  waiting: 'waiting',
-  working: 'working'
+  idle: '空闲',
+  starting: '启动中',
+  waiting: '等待中',
+  working: '工作中'
 }
 
 const CTRL_OFFSET = 96
@@ -38,7 +38,7 @@ const ctrlChar = (letter: string) => String.fromCharCode(letter.charCodeAt(0) - 
 export const fixedSessionColumnStyle = () => ({ flexShrink: 0 })
 
 export const activeSessionCountLabel = (count: number) =>
-  `${count} live ${count === 1 ? 'session' : 'sessions'}`
+  `${count} 个实时会话`
 
 export type OrchestratorHintRole = 'hotkey' | 'label' | 'text'
 
@@ -50,31 +50,31 @@ export interface OrchestratorHintSegment {
 export const orchestratorContextHintSegments = (newSelected: boolean): OrchestratorHintSegment[] =>
   newSelected
     ? [
-        { role: 'label', text: 'New row:' },
-        { role: 'text', text: ' type prompt · ' },
+        { role: 'label', text: '新建行：' },
+        { role: 'text', text: ' 输入提示词 · ' },
         { role: 'hotkey', text: 'Enter' },
-        { role: 'text', text: ' start · ' },
+        { role: 'text', text: ' 开始 · ' },
         { role: 'hotkey', text: 'Tab' },
-        { role: 'text', text: ' model' }
+        { role: 'text', text: ' 模型' }
       ]
     : [
-        { role: 'label', text: 'Session row:' },
+        { role: 'label', text: '会话行：' },
         { role: 'text', text: ' ' },
         { role: 'hotkey', text: 'Enter' },
-        { role: 'text', text: ' switch · ' },
+        { role: 'text', text: ' 切换 · ' },
         { role: 'hotkey', text: 'Ctrl+D' },
-        { role: 'text', text: ' close' }
+        { role: 'text', text: ' 关闭' }
       ]
 
 export const orchestratorGlobalHotkeyHintSegments: OrchestratorHintSegment[] = [
   { role: 'hotkey', text: '↑↓' },
-  { role: 'text', text: ' move · ' },
+  { role: 'text', text: ' 移动 · ' },
   { role: 'hotkey', text: 'Ctrl+N' },
-  { role: 'text', text: ' new · ' },
+  { role: 'text', text: ' 新建 · ' },
   { role: 'hotkey', text: 'Ctrl+R' },
-  { role: 'text', text: ' refresh · ' },
+  { role: 'text', text: ' 刷新 · ' },
   { role: 'hotkey', text: 'Esc' },
-  { role: 'text', text: ' close' }
+  { role: 'text', text: ' 关闭' }
 ]
 
 const hintText = (segments: readonly OrchestratorHintSegment[]) => segments.map(segment => segment.text).join('')
@@ -186,7 +186,7 @@ export const draftModelNameFromArg = (value: string) => {
 export const draftModelDisplayLabel = (value: string) => {
   const modelName = draftModelNameFromArg(value)
 
-  return modelName ? shortModel(modelName) : 'current/default'
+  return modelName ? shortModel(modelName) : '当前/默认'
 }
 
 export type OrchestratorRowClickAction = { action: 'activate'; sessionId: string } | { action: 'select-new' }
@@ -268,7 +268,7 @@ export function ActiveSessionSwitcher({
         const r = asRpcResult<SessionActiveListResponse>(raw)
 
         if (!r) {
-          setErr('invalid response: session.active_list')
+          setErr('session.active_list 返回无效响应')
           setLoading(false)
 
           return []
@@ -333,7 +333,7 @@ export function ActiveSessionSwitcher({
       const closed = Boolean(result?.closed ?? result?.ok)
 
       if (!closed) {
-        setErr('session was already closed')
+        setErr('会话已经关闭')
 
         return
       }
@@ -457,7 +457,7 @@ export function ActiveSessionSwitcher({
   }
 
   if (loading) {
-    return <Text color={t.color.muted}>loading session orchestrator…</Text>
+    return <Text color={t.color.muted}>正在加载会话编排器…</Text>
   }
 
   const totalRows = items.length + 1
@@ -467,15 +467,15 @@ export function ActiveSessionSwitcher({
   return (
     <Box flexDirection="column" width={width}>
       <Text bold color={t.color.accent}>
-        Session Orchestrator
+        会话编排器
       </Text>
       <Text color={t.color.muted}>{activeSessionCountLabel(items.length)}</Text>
 
-      {err && <Text color={t.color.label}>error: {err}</Text>}
+      {err && <Text color={t.color.label}>错误：{err}</Text>}
       {!items.length && (
-        <Text color={t.color.muted}>no live sessions — closed TUIs only leave resumable transcripts</Text>
+        <Text color={t.color.muted}>没有实时会话；已关闭的 TUI 只保留可恢复转写</Text>
       )}
-      {offset > 0 && <Text color={t.color.muted}> ↑ {offset} more</Text>}
+      {offset > 0 && <Text color={t.color.muted}> ↑ 还有 {offset} 条</Text>}
 
       {visibleRows.map(i => {
         const selected = sel === i
@@ -483,7 +483,7 @@ export function ActiveSessionSwitcher({
         const rowTextColor = selectedStyle?.color
 
         if (isNewSessionRow(i, items.length)) {
-          const promptTitle = draftTitleFromPrompt(draft) || 'Start a new live session'
+          const promptTitle = draftTitleFromPrompt(draft) || '启动新的实时会话'
           const markerColor = newSessionMarkerColor(t, selected)
 
           return (
@@ -506,13 +506,13 @@ export function ActiveSessionSwitcher({
 
               <Box {...fixedSessionColumnStyle()} width={11}>
                 <Text bold={selected} color={markerColor} wrap="truncate-end">
-                  new
+                  新建
                 </Text>
               </Box>
 
               <Box {...fixedSessionColumnStyle()} width={11}>
                 <Text color={rowTextColor ?? t.color.muted} wrap="truncate-end">
-                  ✎ draft
+                  ✎ 草稿
                 </Text>
               </Box>
 
@@ -534,7 +534,7 @@ export function ActiveSessionSwitcher({
         const s = items[i]!
         const status = s.status ?? 'idle'
         const current = s.current || s.id === currentSessionId
-        const title = closingId === s.id ? 'closing…' : s.title || s.preview || '(untitled)'
+        const title = closingId === s.id ? '正在关闭…' : s.title || s.preview || '（未命名）'
 
         return (
           <Box
@@ -560,7 +560,7 @@ export function ActiveSessionSwitcher({
                 color={rowTextColor ?? (current ? t.color.label : t.color.muted)}
                 wrap="truncate-end"
               >
-                {current ? 'current' : s.id}
+                {current ? '当前' : s.id}
               </Text>
             </Box>
 
@@ -591,24 +591,24 @@ export function ActiveSessionSwitcher({
         )
       })}
 
-      {offset + VISIBLE < totalRows && <Text color={t.color.muted}> ↓ {totalRows - offset - VISIBLE} more</Text>}
+      {offset + VISIBLE < totalRows && <Text color={t.color.muted}> ↓ 还有 {totalRows - offset - VISIBLE} 条</Text>}
 
       {newSelected ? (
         <>
           <Box marginTop={1}>
-            <Text color={t.color.label}>prompt › </Text>
+            <Text color={t.color.label}>提示词 › </Text>
             <TextInput columns={promptColumns} onChange={setDraft} onSubmit={submitDraft} value={draft} />
           </Box>
           <OrchestratorHintText segments={orchestratorContextHintSegments(true)} t={t} />
           <Text color={t.color.muted} wrap="truncate-end">
-            model: {draftModelDisplayLabel(draftModel)}
+            模型：{draftModelDisplayLabel(draftModel)}
           </Text>
         </>
       ) : (
         <Box marginTop={1} flexDirection="column">
           <OrchestratorHintText segments={orchestratorContextHintSegments(false)} t={t} />
           <Text color={t.color.muted} wrap="truncate-end">
-            Select <Text color={newSessionMarkerColor(t, false)}>+new</Text> to type a prompt
+            选择 <Text color={newSessionMarkerColor(t, false)}>+新建</Text> 输入提示词
           </Text>
         </Box>
       )}

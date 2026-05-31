@@ -524,6 +524,13 @@ class TestVisionRequirements:
 
         assert check_vision_requirements() is True
 
+    def test_check_requirements_accepts_native_main_model_without_aux_key(self, monkeypatch):
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("NOUS_API_KEY", raising=False)
+        with patch("agent.image_routing.decide_image_input_mode", return_value="native"):
+            assert check_vision_requirements() is True
+
 
 # ---------------------------------------------------------------------------
 # Integration: registry entry

@@ -466,6 +466,96 @@ async def test_run_agent_feishu_progress_replies_inside_existing_thread(monkeypa
     assert adapter.edits[0]["message_id"] == "progress-1"
 
 
+@pytest.mark.asyncio
+async def test_feishu_zh_progress_title_and_numbering_reaches_first_send_and_edits(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "all")
+    fake_dotenv = types.ModuleType("dotenv")
+    fake_dotenv.load_dotenv = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+
+    fake_run_agent = types.ModuleType("run_agent")
+    fake_run_agent.AIAgent = FakeAgent
+    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+
+    adapter = ProgressCaptureAdapter(platform=Platform.FEISHU)
+    runner = _make_runner(adapter)
+    gateway_run = importlib.import_module("gateway.run")
+    (tmp_path / "config.yaml").write_text(
+        "display:\n  gateway_locale: zh\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
+
+    source = SessionSource(
+        platform=Platform.FEISHU,
+        chat_id="oc_chat",
+        chat_type="group",
+        thread_id="topic_17585",
+    )
+
+    result = await runner._run_agent(
+        message="hello",
+        context_prompt="",
+        history=[],
+        source=source,
+        session_id="sess-feishu-progress-title",
+        session_key="agent:main:feishu:group:oc_chat:topic_17585",
+        event_message_id="om_triggering_user_message",
+    )
+
+    assert result["final_response"] == "done"
+    assert adapter.sent
+    assert adapter.edits
+    assert adapter.sent[0]["content"].startswith("🧰 工具调用记录\n1. ")
+    assert adapter.edits[0]["content"].startswith("🧰 工具调用记录\n1. ")
+    assert "\n2. " in adapter.edits[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_feishu_zh_progress_aggregates_realtime_count(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "all")
+    fake_dotenv = types.ModuleType("dotenv")
+    fake_dotenv.load_dotenv = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+
+    fake_run_agent = types.ModuleType("run_agent")
+    fake_run_agent.AIAgent = FakeAgent
+    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+
+    adapter = ProgressCaptureAdapter(platform=Platform.FEISHU)
+    runner = _make_runner(adapter)
+    gateway_run = importlib.import_module("gateway.run")
+    (tmp_path / "config.yaml").write_text(
+        "display:\n  gateway_locale: zh\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
+
+    source = SessionSource(
+        platform=Platform.FEISHU,
+        chat_id="oc_chat",
+        chat_type="group",
+        thread_id="topic_17585",
+    )
+
+    await runner._run_agent(
+        message="hello",
+        context_prompt="",
+        history=[],
+        source=source,
+        session_id="sess-feishu-progress-count",
+        session_key="agent:main:feishu:group:oc_chat:topic_17585",
+        event_message_id="om_triggering_user_message",
+    )
+
+    assert adapter.sent[0]["content"].startswith("🧰 工具调用记录")
+    assert adapter.sent[0]["content"].count("\n1. ") == 1
+    assert adapter.edits[0]["content"].count("\n1. ") == 1
+    assert adapter.edits[0]["content"].count("\n2. ") == 1
+
+
 # ---------------------------------------------------------------------------
 # Preview truncation tests (all/new mode respects tool_preview_length)
 # ---------------------------------------------------------------------------

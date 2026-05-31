@@ -390,11 +390,39 @@ def test_commands_catalog_localizes_tui_descriptions(server):
     pairs = dict(result["pairs"])
     assert pairs["/help"].startswith("显示可用命令")
     assert "Show available commands" not in pairs["/help"]
+    assert pairs["/browser"].startswith("连接或查看 Chromium")
+    assert "Connect browser tools" not in pairs["/browser"]
+    assert pairs["/plugins"] == "列出已安装插件及状态"
+    assert "List installed plugins" not in pairs["/plugins"]
+    assert pairs["/quit"].startswith("退出 TUI")
+    assert "Exit the CLI" not in pairs["/quit"]
+    assert pairs["/config"] == "显示当前配置"
+    assert pairs["/statusbar"] == "切换上下文/模型状态栏"
+    assert pairs["/tools"].startswith("管理工具")
+    assert pairs["/skills"] == "浏览、查看、安装或审计技能"
     assert pairs["/compact"] == "切换紧凑显示模式"
+    visible_catalog = "\n".join(pairs.values())
+    for phrase in [
+        "Attach a local image",
+        "Show current configuration",
+        "Toggle the context/model",
+        "Show or change the display skin",
+        "Pick the TUI busy-indicator",
+        "Control what Enter",
+        "Manage tools",
+        "List available toolsets",
+        "Search, install",
+        "Manage scheduled tasks",
+        "Reload .env variables",
+        "Show gateway/messaging",
+        "Copy the last assistant",
+    ]:
+        assert phrase not in visible_catalog
 
     category_names = [cat["name"] for cat in result["categories"]]
     assert "信息" in category_names
     assert "TUI" in category_names
+    assert "用户命令" in category_names or "User commands" not in category_names
 
 
 def test_complete_slash_localizes_visible_meta(server):
@@ -409,6 +437,15 @@ def test_complete_slash_localizes_visible_meta(server):
     items = resp["result"]["items"]
     assert items[0]["meta"] == "显示可用命令"
     assert "Show available commands" not in items[0]["meta"]
+
+    resp = server.handle_request({
+        "id": "r-complete-browser",
+        "method": "complete.slash",
+        "params": {"text": "/browser"},
+    })
+    browser_items = resp["result"]["items"]
+    assert browser_items[0]["meta"].startswith("连接或查看 Chromium")
+    assert "Connect browser tools" not in browser_items[0]["meta"]
 
     resp = server.handle_request({
         "id": "r-details",

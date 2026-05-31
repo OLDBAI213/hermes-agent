@@ -15,10 +15,11 @@ from agent.memory_manager import MemoryManager
 class FakeMemoryProvider(MemoryProvider):
     """Minimal concrete provider for testing."""
 
-    def __init__(self, name="fake", available=True, tools=None):
+    def __init__(self, name="fake", available=True, tools=None, safety_verdict=None):
         self._name = name
         self._available = available
         self._tools = tools or []
+        self._safety_verdict = safety_verdict
         self.initialized = False
         self.synced_turns = []
         self.prefetch_queries = []
@@ -27,6 +28,7 @@ class FakeMemoryProvider(MemoryProvider):
         self.session_end_called = False
         self.pre_compress_called = False
         self.memory_writes = []
+        self.safety_calls = []
         self.shutdown_called = False
         self._prefetch_result = ""
         self._prompt_block = ""
@@ -54,6 +56,10 @@ class FakeMemoryProvider(MemoryProvider):
 
     def sync_turn(self, user_content, assistant_content, *, session_id=""):
         self.synced_turns.append((user_content, assistant_content))
+
+    def check_tool_safety(self, tool_name, args, **kwargs):
+        self.safety_calls.append((tool_name, args, kwargs))
+        return self._safety_verdict
 
     def get_tool_schemas(self):
         return self._tools
@@ -315,6 +321,35 @@ class TestMemoryManager:
         mgr = MemoryManager()
         result = json.loads(mgr.handle_tool_call("nonexistent", {}))
         assert "error" in result
+
+    def test_check_tool_safety_returns_block_metadata(self):
+        mgr = MemoryManager()
+        p = FakeMemoryProvider("ext", safety_verdict="BLOCKED by memory: do not ssh root")
+        mgr.add_provider(p)
+
+        verdict = mgr.check_tool_safety("terminal", {"command": "ssh root@prod"})
+
+        assert verdict == {
+            "action": "block",
+            "message": "BLOCKED by memory: do not ssh root",
+            "provider": "ext",
+            "tool_name": "terminal",
+        }
+        assert p.safety_calls[0][0] == "terminal"
+
+    def test_check_tool_safety_returns_warning_metadata(self):
+        mgr = MemoryManager()
+        p = FakeMemoryProvider("ext", safety_verdict="WARNING by memory: avoid curl here")
+        mgr.add_provider(p)
+
+        verdict = mgr.check_tool_safety("terminal", {"command": "curl https://x"})
+
+        assert verdict == {
+            "action": "warn",
+            "message": "WARNING by memory: avoid curl here",
+            "provider": "ext",
+            "tool_name": "terminal",
+        }
 
     def test_tool_routing(self):
         mgr = MemoryManager()

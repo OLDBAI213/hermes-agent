@@ -297,54 +297,54 @@ def is_user_allowed(rule: ResolvedCommentRule, user_open_id: str) -> bool:
 
 def _print_status() -> None:
     cfg = load_config()
-    print(f"Rules file: {RULES_FILE}")
-    print(f"  exists: {RULES_FILE.exists()}")
-    print(f"Pairing file: {PAIRING_FILE}")
-    print(f"  exists: {PAIRING_FILE.exists()}")
+    print(f"规则文件: {RULES_FILE}")
+    print(f"  存在: {RULES_FILE.exists()}")
+    print(f"配对文件: {PAIRING_FILE}")
+    print(f"  存在: {PAIRING_FILE.exists()}")
     print()
-    print(f"Top-level:")
-    print(f"  enabled:    {cfg.enabled}")
-    print(f"  policy:     {cfg.policy}")
-    print(f"  allow_from: {sorted(cfg.allow_from) if cfg.allow_from else '[]'}")
+    print("顶层配置:")
+    print(f"  启用:       {cfg.enabled}")
+    print(f"  策略:       {cfg.policy}")
+    print(f"  允许用户:   {sorted(cfg.allow_from) if cfg.allow_from else '[]'}")
     print()
     if cfg.documents:
-        print(f"Document rules ({len(cfg.documents)}):")
+        print(f"文档规则 ({len(cfg.documents)}):")
         for key, rule in sorted(cfg.documents.items()):
             parts = []
             if rule.enabled is not None:
-                parts.append(f"enabled={rule.enabled}")
+                parts.append(f"启用={rule.enabled}")
             if rule.policy is not None:
-                parts.append(f"policy={rule.policy}")
+                parts.append(f"策略={rule.policy}")
             if rule.allow_from is not None:
-                parts.append(f"allow_from={sorted(rule.allow_from)}")
-            print(f"  [{key}] {', '.join(parts) if parts else '(empty — inherits all)'}")
+                parts.append(f"允许用户={sorted(rule.allow_from)}")
+            print(f"  [{key}] {', '.join(parts) if parts else '(空，继承全部配置)'}")
     else:
-        print("Document rules: (none)")
+        print("文档规则: 无")
     print()
     approved = pairing_list()
-    print(f"Pairing approved ({len(approved)}):")
+    print(f"已配对用户 ({len(approved)}):")
     for uid, meta in sorted(approved.items()):
         ts = meta.get("approved_at", 0)
-        print(f"  {uid}  (approved_at={ts})")
+        print(f"  {uid}  (批准时间={ts})")
 
 
 def _do_check(doc_key: str, user_open_id: str) -> None:
     cfg = load_config()
     parts = doc_key.split(":", 1)
     if len(parts) != 2:
-        print(f"Error: doc_key must be 'fileType:fileToken', got '{doc_key}'")
+        print(f"错误: doc_key 必须是 'fileType:fileToken'，当前是 '{doc_key}'")
         return
     file_type, file_token = parts
     rule = resolve_rule(cfg, file_type, file_token)
     allowed = is_user_allowed(rule, user_open_id)
-    print(f"Document:     {doc_key}")
-    print(f"User:         {user_open_id}")
-    print(f"Resolved rule:")
-    print(f"  enabled:      {rule.enabled}")
-    print(f"  policy:       {rule.policy}")
-    print(f"  allow_from:   {sorted(rule.allow_from) if rule.allow_from else '[]'}")
-    print(f"  match_source: {rule.match_source}")
-    print(f"Result:       {'ALLOWED' if allowed else 'DENIED'}")
+    print(f"文档:       {doc_key}")
+    print(f"用户:       {user_open_id}")
+    print("命中规则:")
+    print(f"  启用:       {rule.enabled}")
+    print(f"  策略:       {rule.policy}")
+    print(f"  允许用户:   {sorted(rule.allow_from) if rule.allow_from else '[]'}")
+    print(f"  来源:       {rule.match_source}")
+    print(f"结果:       {'允许' if allowed else '拒绝'}")
 
 
 def _main() -> int:
@@ -357,18 +357,18 @@ def _main() -> int:
         pass
 
     usage = (
-        "Usage: python -m gateway.platforms.feishu_comment_rules <command> [args]\n"
+        "用法: python -m gateway.platforms.feishu_comment_rules <command> [args]\n"
         "\n"
-        "Commands:\n"
-        "  status                              Show rules config and pairing state\n"
-        "  check <fileType:token> <user>        Simulate access check\n"
-        "  pairing add <user_open_id>           Add user to pairing-approved list\n"
-        "  pairing remove <user_open_id>        Remove user from pairing-approved list\n"
-        "  pairing list                         List pairing-approved users\n"
+        "命令:\n"
+        "  status                              显示规则配置和配对状态\n"
+        "  check <fileType:token> <user>        模拟访问检查\n"
+        "  pairing add <user_open_id>           添加用户到配对批准列表\n"
+        "  pairing remove <user_open_id>        从配对批准列表移除用户\n"
+        "  pairing list                         列出已配对批准用户\n"
         "\n"
-        f"Rules config file: {RULES_FILE}\n"
-        "  Edit this JSON file directly to configure policies and document rules.\n"
-        "  Changes take effect on the next comment event (no restart needed).\n"
+        f"规则配置文件: {RULES_FILE}\n"
+        "  直接编辑这个 JSON 文件即可配置策略和文档规则。\n"
+        "  修改会在下一次评论事件生效，无需重启。\n"
     )
 
     args = sys.argv[1:]
@@ -383,42 +383,42 @@ def _main() -> int:
 
     elif cmd == "check":
         if len(args) < 3:
-            print("Usage: check <fileType:fileToken> <user_open_id>")
+            print("用法: check <fileType:fileToken> <user_open_id>")
             return 1
         _do_check(args[1], args[2])
 
     elif cmd == "pairing":
         if len(args) < 2:
-            print("Usage: pairing <add|remove|list> [args]")
+            print("用法: pairing <add|remove|list> [args]")
             return 1
         sub = args[1]
         if sub == "add":
             if len(args) < 3:
-                print("Usage: pairing add <user_open_id>")
+                print("用法: pairing add <user_open_id>")
                 return 1
             if pairing_add(args[2]):
-                print(f"Added: {args[2]}")
+                print(f"已添加: {args[2]}")
             else:
-                print(f"Already approved: {args[2]}")
+                print(f"已在批准列表中: {args[2]}")
         elif sub == "remove":
             if len(args) < 3:
-                print("Usage: pairing remove <user_open_id>")
+                print("用法: pairing remove <user_open_id>")
                 return 1
             if pairing_remove(args[2]):
-                print(f"Removed: {args[2]}")
+                print(f"已移除: {args[2]}")
             else:
-                print(f"Not in approved list: {args[2]}")
+                print(f"不在批准列表中: {args[2]}")
         elif sub == "list":
             approved = pairing_list()
             if not approved:
-                print("(no approved users)")
+                print("(暂无已批准用户)")
             for uid, meta in sorted(approved.items()):
-                print(f"  {uid}  approved_at={meta.get('approved_at', '?')}")
+                print(f"  {uid}  批准时间={meta.get('approved_at', '?')}")
         else:
-            print(f"Unknown pairing subcommand: {sub}")
+            print(f"未知 pairing 子命令: {sub}")
             return 1
     else:
-        print(f"Unknown command: {cmd}\n")
+        print(f"未知命令: {cmd}\n")
         print(usage)
         return 1
     return 0

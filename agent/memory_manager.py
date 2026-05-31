@@ -438,6 +438,44 @@ class MemoryManager:
         """Check if any provider handles this tool."""
         return tool_name in self._tool_to_provider
 
+    def check_tool_safety(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        **kwargs,
+    ) -> Optional[Dict[str, Any]]:
+        """Ask providers whether a tool call should be blocked or warned.
+
+        The first provider returning a non-empty result wins. Providers may
+        return free-form strings; ``WARNING``-prefixed messages become
+        warning decisions, everything else is treated as a hard block.
+        """
+        for provider in self._providers:
+            try:
+                try:
+                    verdict = provider.check_tool_safety(tool_name, args, **kwargs)
+                except TypeError:
+                    verdict = provider.check_tool_safety(tool_name, args)
+            except Exception as e:
+                logger.debug(
+                    "Memory provider '%s' check_tool_safety failed: %s",
+                    provider.name, e,
+                )
+                continue
+            if not verdict:
+                continue
+            text = str(verdict).strip()
+            if not text:
+                continue
+            action = "warn" if text.upper().startswith("WARNING") else "block"
+            return {
+                "action": action,
+                "message": text,
+                "provider": provider.name,
+                "tool_name": tool_name,
+            }
+        return None
+
     def handle_tool_call(
         self, tool_name: str, args: Dict[str, Any], **kwargs
     ) -> str:

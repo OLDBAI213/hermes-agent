@@ -2,6 +2,7 @@ import type { MouseTrackingMode } from '@hermes/ink'
 import { useEffect, useRef } from 'react'
 
 import { resolveDetailsMode, resolveSections } from '../domain/details.js'
+import { normalizeTuiModules } from '../domain/tuiModules.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ConfigFullResponse,
@@ -216,7 +217,8 @@ export const applyDisplay = (
     showCost: !!d.show_cost,
     showReasoning: !!d.show_reasoning,
     statusBar: normalizeStatusBar(d.tui_statusbar),
-    streaming: d.streaming !== false
+    streaming: d.streaming !== false,
+    tuiModules: normalizeTuiModules(d.tui_modules)
   })
 }
 
@@ -269,7 +271,7 @@ export function useConfigSync({
         mtimeRef.current = next
 
         quietRpc<ReloadMcpResponse>(gw, 'reload.mcp', { session_id: sid, confirm: true }).then(
-          r => r && turnController.pushActivity('MCP reloaded after config change')
+          r => r && turnController.pushActivity('配置变更后已重载 MCP')
         )
         void hydrateFullConfig(gw, setBellOnComplete, setVoiceRecordKey)
       })

@@ -347,6 +347,22 @@ class TestConvertMessagesToConverse:
         assert len(image_blocks) == 1
         assert image_blocks[0]["image"]["format"] == "png"
 
+    def test_inline_image_url_data_url_converted(self):
+        from agent.bedrock_adapter import convert_messages_to_converse
+
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What's in this image?"},
+                {"type": "image_url", "image_url": "data:image/png;base64,iVBORw0KGgo="},
+            ],
+        }]
+
+        _system, msgs = convert_messages_to_converse(messages)
+        image_blocks = [b for b in msgs[0]["content"] if "image" in b]
+        assert len(image_blocks) == 1
+        assert image_blocks[0]["image"]["format"] == "png"
+
     def test_multiple_system_messages_merged(self):
         from agent.bedrock_adapter import convert_messages_to_converse
         messages = [

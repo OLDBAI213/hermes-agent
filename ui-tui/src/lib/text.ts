@@ -3,6 +3,7 @@ import {
   LIVE_RENDER_MAX_LINES,
   THINKING_COT_MAX
 } from '../config/limits.js'
+import { FACES } from '../content/faces.js'
 import { VERBS } from '../content/verbs.js'
 import type { ThinkingMode } from '../types.js'
 
@@ -103,7 +104,7 @@ export const pasteTokenLabel = (text: string, lineCount: number) => {
     : `[[ ${preview} [${fmtK(lineCount)} lines] ]]`
 }
 
-const STATUS_WORDS = [...REASONING_STATUS_WORDS, ...VERBS]
+const STATUS_WORDS = [...VERBS]
 
 const LEGACY_REASONING_STATUS_WORDS = [
   'pondering',
@@ -514,7 +515,7 @@ export const buildToolTrailLine = (
 const verboseToolBlock = (label: string, text?: string) => {
   const body = (text ?? '').trim()
 
-  return body ? `${label}:\n${boundedLiveRenderText(body)}` : ''
+  return body ? `${label}：\n${boundedLiveRenderText(body)}` : ''
 }
 
 export const buildVerboseToolTrailLine = (
@@ -525,7 +526,7 @@ export const buildVerboseToolTrailLine = (
   argsText?: string,
   resultText?: string
 ) => {
-  const detail = [verboseToolBlock('Args', argsText), verboseToolBlock(error ? 'Error' : 'Result', resultText)]
+  const detail = [verboseToolBlock('参数', argsText), verboseToolBlock(error ? '错误' : '结果', resultText)]
     .filter(Boolean)
     .join('\n')
   const took = duration !== undefined ? ` (${duration.toFixed(1)}s)` : ''

@@ -32,25 +32,35 @@ _DEFAULT_FIELDS: tuple[str, ...] = ("model", "context_pct", "cwd")
 _SEP = " · "
 
 
+def _display_path(path: str) -> str:
+    return path.replace("\\", "/")
+
+
 def _home_relative_cwd(cwd: str) -> str:
     """Return *cwd* with ``$HOME`` collapsed to ``~``.  Empty string if unset."""
     if not cwd:
         return ""
     try:
-        home = os.path.expanduser("~")
+        home = os.environ.get("HOME") or os.path.expanduser("~")
         p = os.path.abspath(cwd)
         if home and (p == home or p.startswith(home + os.sep)):
-            return "~" + p[len(home):]
+            suffix = p[len(home):].lstrip("\\/")
+            return "~" if not suffix else "~/" + _display_path(suffix)
         return p
     except Exception:
-        return cwd
+        return _display_path(cwd)
 
 
 def _model_short(model: Optional[str]) -> str:
     """Drop ``vendor/`` prefix for readability (``openai/gpt-5.4`` → ``gpt-5.4``)."""
     if not model:
         return ""
-    return model.rsplit("/", 1)[-1]
+    short = model.rsplit("/", 1)[-1]
+    if short == "mimo-v2.5":
+        return "小米 MiMo v2.5"
+    if short == "mimo-v2.5-pro":
+        return "小米 MiMo v2.5 Pro"
+    return short
 
 
 def resolve_footer_config(
@@ -93,6 +103,7 @@ def format_runtime_footer(
     model: Optional[str],
     context_tokens: int,
     context_length: Optional[int],
+    provider: Optional[str] = None,
     cwd: Optional[str] = None,
     fields: Iterable[str] = _DEFAULT_FIELDS,
 ) -> str:
@@ -107,6 +118,13 @@ def format_runtime_footer(
             m = _model_short(model)
             if m:
                 parts.append(m)
+        elif field == "provider":
+            if provider:
+                parts.append(provider)
+        elif field == "context":
+            if context_length and context_length > 0 and context_tokens >= 0:
+                pct = max(0, min(100, round((context_tokens / context_length) * 100)))
+                parts.append(f"约 {context_tokens // 1000}K / {context_length // 1000}K ({pct}%)")
         elif field == "context_pct":
             if context_length and context_length > 0 and context_tokens >= 0:
                 pct = max(0, min(100, round((context_tokens / context_length) * 100)))
@@ -129,6 +147,7 @@ def build_footer_line(
     model: Optional[str],
     context_tokens: int,
     context_length: Optional[int],
+    provider: Optional[str] = None,
     cwd: Optional[str] = None,
 ) -> str:
     """Top-level entry point used by gateway/run.py.
@@ -144,6 +163,7 @@ def build_footer_line(
         model=model,
         context_tokens=context_tokens,
         context_length=context_length,
+        provider=provider,
         cwd=cwd,
         fields=cfg.get("fields") or _DEFAULT_FIELDS,
     )

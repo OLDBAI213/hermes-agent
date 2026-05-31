@@ -43,17 +43,17 @@ const SORT_ORDER: readonly SortMode[] = ['depth-first', 'tools-desc', 'duration-
 const FILTER_ORDER: readonly FilterMode[] = ['all', 'running', 'failed', 'leaf']
 
 const SORT_LABEL: Record<SortMode, string> = {
-  'depth-first': 'spawn order',
-  'duration-desc': 'slowest',
-  status: 'status',
-  'tools-desc': 'busiest'
+  'depth-first': '启动顺序',
+  'duration-desc': '耗时最长',
+  status: '状态',
+  'tools-desc': '工具最多'
 }
 
 const FILTER_LABEL: Record<FilterMode, string> = {
-  all: 'all',
-  failed: 'failed',
-  leaf: 'leaves',
-  running: 'running'
+  all: '全部',
+  failed: '失败',
+  leaf: '叶子节点',
+  running: '运行中'
 }
 
 const STATUS_RANK: Record<Status, number> = {
@@ -413,7 +413,7 @@ function Detail({ id, node, t }: { id?: string; node: SubagentNode; t: Theme }) 
   const filesRead = item.filesRead ?? []
   const filesWritten = item.filesWritten ?? []
   const outputTail = item.outputTail ?? []
-  // Tool calls: prefer the live stream; for archived / post-turn views
+  // Tool history: prefer the live stream; for archived / post-turn views
   // that stream is often empty even when tool_count > 0, so fall back to
   // the tool names captured in outputTail at subagent.complete time.
   const toolLines = item.tools.length > 0 ? item.tools : outputTail.map(e => e.tool).filter(Boolean)
@@ -493,7 +493,7 @@ function Detail({ id, node, t }: { id?: string; node: SubagentNode; t: Theme }) 
       ) : null}
 
       {toolLines.length > 0 ? (
-        <OverlaySection count={toolLines.length} defaultOpen t={t} title="Tool calls">
+        <OverlaySection count={toolLines.length} defaultOpen t={t} title="工具调用">
           {toolLines.map((line, i) => (
             <Text color={t.color.text} key={i} wrap="wrap">
               <Text color={t.color.muted}>·</Text> {line}
@@ -655,16 +655,16 @@ function DiffView({
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       <Box flexDirection="column" marginBottom={1}>
-        <Text bold color={t.color.border}>
-          Replay diff
+          <Text bold color={t.color.border}>
+          回放差异
         </Text>
-        <Text color={t.color.muted}>baseline vs candidate · esc/q close</Text>
+        <Text color={t.color.muted}>基线 vs 候选 · Esc/q 关闭</Text>
       </Box>
 
       <Box flexDirection="row" marginBottom={1}>
-        <DiffPane label="A · baseline" snapshot={pair.baseline} t={t} totals={aTotals} width={paneWidth} />
+        <DiffPane label="A · 基线" snapshot={pair.baseline} t={t} totals={aTotals} width={paneWidth} />
         <Box width={2} />
-        <DiffPane label="B · candidate" snapshot={pair.candidate} t={t} totals={bTotals} width={paneWidth} />
+        <DiffPane label="B · 候选" snapshot={pair.candidate} t={t} totals={bTotals} width={paneWidth} />
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
@@ -767,7 +767,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     if (historyIndex === 0 && prev > 0 && liveSubagents.length === 0 && history.length > 0) {
       setHistoryIndex(1)
       setCursor(0)
-      setFlash('turn finished · inspect freely · q to close')
+      setFlash('本轮已完成 · 可自由查看 · q 关闭')
     }
   }, [history.length, historyIndex, liveSubagents.length])
 
@@ -793,7 +793,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
 
   const guardLive = (action: () => void) => {
     if (replayMode) {
-      setFlash('replay mode — controls disabled')
+      setFlash('回放模式，控制项已禁用')
     } else {
       action()
     }
@@ -806,16 +806,16 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
       interrupt(id)
         .then(raw => {
           const r = asRpcResult<SubagentInterruptResponse>(raw)
-          setFlash(r?.found ? `killing ${id}` : `not found: ${id}`)
+          setFlash(r?.found ? `正在停止 ${id}` : `未找到：${id}`)
         })
-        .catch(() => setFlash(`kill failed: ${id}`))
+        .catch(() => setFlash(`停止失败：${id}`))
     })
 
   const killSubtree = (node: SubagentNode) =>
     guardLive(() => {
       const ids = [node.item.id, ...descendantIds(node)]
       ids.forEach(id => interrupt(id).catch(() => {}))
-      setFlash(`killing subtree · ${ids.length} node${ids.length === 1 ? '' : 's'}`)
+      setFlash(`正在停止子树 · ${ids.length} 个节点`)
     })
 
   const togglePause = () =>
@@ -824,9 +824,9 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
         .then(raw => {
           const r = asRpcResult<DelegationPauseResponse>(raw)
           applyDelegationStatus({ paused: r?.paused })
-          setFlash(r?.paused ? 'spawning paused' : 'spawning resumed')
+          setFlash(r?.paused ? '子任务启动已暂停' : '子任务启动已恢复')
         })
-        .catch(() => setFlash('pause failed'))
+        .catch(() => setFlash('暂停操作失败'))
     })
 
   const stepHistory = (delta: -1 | 1) =>
@@ -835,7 +835,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
 
       if (next !== idx) {
         setCursor(0)
-        setFlash(next === 0 ? 'live turn' : `replay · ${next}/${history.length}`)
+        setFlash(next === 0 ? '实时任务' : `回放 · ${next}/${history.length}`)
       }
 
       return next
@@ -968,21 +968,21 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     .join(' · ')
 
   const capsLabel = delegation.maxSpawnDepth
-    ? `caps d${delegation.maxSpawnDepth}/${delegation.maxConcurrentChildren ?? '?'}`
+    ? `上限 d${delegation.maxSpawnDepth}/${delegation.maxConcurrentChildren ?? '?'}`
     : ''
 
   const title =
     replayMode && effectiveSnapshot
-      ? `${historyIndex > 0 ? `Replay ${historyIndex}/${history.length}` : 'Last turn'} · finished ${new Date(
+      ? `${historyIndex > 0 ? `回放 ${historyIndex}/${history.length}` : '上一轮'} · 完成于 ${new Date(
           effectiveSnapshot.finishedAt
         ).toLocaleTimeString()}`
-      : `Spawn tree${delegation.paused ? ' · ⏸ paused' : ''}`
+      : `子任务树${delegation.paused ? ' · ⏸ 已暂停' : ''}`
 
   const metaLine = [formatSummary(totals), spark, capsLabel, mix ? `· ${mix}` : ''].filter(Boolean).join('  ')
 
   const controlsHint = replayMode
-    ? ' · controls locked'
-    : ` · x kill · X subtree · p ${delegation.paused ? 'resume' : 'pause'}`
+    ? ' · 控制已锁定'
+    : ` · x 停止 · X 停止子树 · p ${delegation.paused ? '恢复' : '暂停'}`
 
   // ── Rendering ──────────────────────────────────────────────────────
 
@@ -1008,7 +1008,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
 
       {rows.length === 0 ? (
         <Box flexDirection="column" flexGrow={1}>
-          <Text color={t.color.muted}>No subagents this turn. Trigger delegate_task to populate the tree.</Text>
+          <Text color={t.color.muted}>本轮没有子任务。触发 delegate_task 后会在这里显示树。</Text>
         </Box>
       ) : mode === 'list' ? (
         <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
@@ -1047,14 +1047,14 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
 
         {mode === 'list' ? (
           <Text color={t.color.muted}>
-            ↑↓/jk move · g/G top/bottom · Enter/→ open detail{controlsHint} · s sort:{SORT_LABEL[sort]} · f filter:
+            ↑↓/jk 移动 · g/G 顶部/底部 · Enter/→ 打开详情{controlsHint} · s 排序:{SORT_LABEL[sort]} · f 筛选:
             {FILTER_LABEL[filter]}
-            {history.length > 0 ? ` · [ / ] history ${historyIndex}/${history.length}` : ''}
-            {' · q close'}
+            {history.length > 0 ? ` · [ / ] 历史 ${historyIndex}/${history.length}` : ''}
+            {' · q 关闭'}
           </Text>
         ) : (
           <Text color={t.color.muted}>
-            ↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · Esc/← back to list{controlsHint} · q close
+            ↑↓/jk 滚动 · PgUp/PgDn 翻页 · g/G 顶部/底部 · Esc/← 返回列表{controlsHint} · q 关闭
           </Text>
         )}
       </Box>

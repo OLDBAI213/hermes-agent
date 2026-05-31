@@ -7,6 +7,7 @@ import type { ImageAttachResponse, SessionCloseResponse } from '../gatewayTypes.
 import type { ParsedVoiceRecordKey } from '../lib/platform.js'
 import type { RpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
+import type { TuiModules } from '../domain/tuiModules.js'
 import type {
   ApprovalReq,
   ClarifyReq,
@@ -119,6 +120,7 @@ export interface UiState {
   statusBar: StatusBarMode
   streaming: boolean
   theme: Theme
+  tuiModules: TuiModules
   usage: Usage
 }
 

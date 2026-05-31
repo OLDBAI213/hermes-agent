@@ -2497,6 +2497,23 @@ class TestConcurrentToolExecution:
 
         assert json.loads(result) == {"error": "Blocked"}
 
+    def test_invoke_tool_memory_blocked_returns_error_and_skips_execution(self, agent):
+        """Memory hard blocks should short-circuit tool execution."""
+        agent._memory_manager = MagicMock()
+        agent._memory_manager.check_tool_safety.return_value = {
+            "action": "block",
+            "message": "BLOCKED by memory: do not run this",
+            "provider": "cognitive",
+            "tool_name": "todo",
+        }
+        with patch("tools.todo_tool.todo_tool", side_effect=AssertionError("should not run")) as mock_todo:
+            result = agent._invoke_tool("todo", {"todos": []}, "task-1")
+
+        parsed = json.loads(result)
+        assert parsed["error"] == "BLOCKED by memory: do not run this"
+        assert parsed["memory_guardrail"]["provider"] == "cognitive"
+        mock_todo.assert_not_called()
+
     def test_sequential_blocked_tool_skips_checkpoints_and_callbacks(self, agent, monkeypatch):
         """Sequential path: blocked tool should not trigger checkpoints or start callbacks."""
         tool_call = _mock_tool_call(name="write_file",
@@ -2525,6 +2542,48 @@ class TestConcurrentToolExecution:
         assert len(messages) == 1
         assert messages[0]["role"] == "tool"
         assert json.loads(messages[0]["content"]) == {"error": "Blocked by policy"}
+
+    def test_sequential_memory_blocked_tool_skips_execution(self, agent):
+        """Sequential path should honor memory hard blocks before tool execution."""
+        tool_call = _mock_tool_call(name="todo", arguments='{"todos":[]}', call_id="c-mem-block")
+        mock_msg = _mock_assistant_msg(content="", tool_calls=[tool_call])
+        messages = []
+
+        agent._memory_manager = MagicMock()
+        agent._memory_manager.check_tool_safety.return_value = {
+            "action": "block",
+            "message": "BLOCKED by memory: todo is forbidden here",
+            "provider": "cognitive",
+            "tool_name": "todo",
+        }
+
+        with patch("tools.todo_tool.todo_tool", side_effect=AssertionError("should not run")) as mock_todo:
+            agent._execute_tool_calls_sequential(mock_msg, messages, "task-1")
+
+        mock_todo.assert_not_called()
+        parsed = json.loads(messages[0]["content"])
+        assert parsed["error"] == "BLOCKED by memory: todo is forbidden here"
+        assert parsed["memory_guardrail"]["provider"] == "cognitive"
+
+    def test_sequential_memory_warning_is_appended_after_execution(self, agent):
+        """Memory soft blocks should surface as guidance, not a hard block."""
+        tool_call = _mock_tool_call(name="todo", arguments='{"todos":[]}', call_id="c-mem-warn")
+        mock_msg = _mock_assistant_msg(content="", tool_calls=[tool_call])
+        messages = []
+
+        agent._memory_manager = MagicMock()
+        agent._memory_manager.check_tool_safety.return_value = {
+            "action": "warn",
+            "message": "WARNING by memory: avoid reusing this exact todo shape",
+            "provider": "cognitive",
+            "tool_name": "todo",
+        }
+
+        with patch("tools.todo_tool.todo_tool", return_value='{"ok":true}') as mock_todo:
+            agent._execute_tool_calls_sequential(mock_msg, messages, "task-1")
+
+        mock_todo.assert_called_once()
+        assert "Memory warning: WARNING by memory: avoid reusing this exact todo shape" in messages[0]["content"]
 
     def test_blocked_memory_tool_does_not_reset_counter(self, agent, monkeypatch):
         """Blocked memory tool should not reset the nudge counter."""

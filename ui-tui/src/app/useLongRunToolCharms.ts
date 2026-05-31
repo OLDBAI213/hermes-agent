@@ -56,7 +56,7 @@ export function useLongRunToolCharms() {
 
         slots.current.set(tool.id, { count: slot.count + 1, lastAt: now })
         turnController.pushActivity(
-          `${pick(LONG_RUN_CHARMS)} (${toolTrailLabel(tool.name)} · ${Math.round((now - tool.startedAt) / 1000)}s)`
+          `${pick(LONG_RUN_CHARMS)}（${toolTrailLabel(tool.name)} · ${Math.round((now - tool.startedAt) / 1000)} 秒）`
         )
       }
     }

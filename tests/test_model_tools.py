@@ -1,6 +1,7 @@
 """Tests for model_tools.py — function call dispatch, agent-loop interception, legacy toolsets."""
 
 import json
+from pathlib import Path
 from unittest.mock import ANY, call, patch
 
 
@@ -12,6 +13,10 @@ from model_tools import (
     _LEGACY_TOOLSET_MAP,
     TOOL_TO_TOOLSET_MAP,
 )
+
+
+def _tool_def(name: str) -> dict:
+    return {"type": "function", "function": {"name": name}}
 
 
 # =========================================================================
@@ -84,6 +89,7 @@ class TestHandleFunctionCall:
             ),
         ]
 
+
     def test_post_tool_call_receives_non_negative_integer_duration_ms(self):
         """Regression: post_tool_call and transform_tool_result hooks must
         receive a non-negative integer ``duration_ms`` kwarg measuring
@@ -110,6 +116,61 @@ class TestHandleFunctionCall:
         assert post_duration == transform_duration
         # pre_tool_call does NOT get duration_ms (nothing has run yet).
         assert "duration_ms" not in kwargs_by_hook["pre_tool_call"]
+
+
+class TestNativeVisionToolFiltering:
+    def test_hides_vision_analyze_when_main_model_is_native(self, monkeypatch):
+        import model_tools
+
+        monkeypatch.setattr(model_tools, "_active_main_model_uses_native_image_input", lambda: True)
+        tools = [_tool_def("vision_analyze"), _tool_def("read_file")]
+
+        filtered = model_tools._filter_redundant_native_vision_tools(tools)
+
+        assert [t["function"]["name"] for t in filtered] == ["read_file"]
+
+    def test_keeps_vision_analyze_for_text_image_routing(self, monkeypatch):
+        import model_tools
+
+        monkeypatch.setattr(model_tools, "_active_main_model_uses_native_image_input", lambda: False)
+        tools = [_tool_def("vision_analyze"), _tool_def("read_file")]
+
+        filtered = model_tools._filter_redundant_native_vision_tools(tools)
+
+        assert [t["function"]["name"] for t in filtered] == ["vision_analyze", "read_file"]
+
+    def test_escape_hatch_keeps_vision_analyze(self, monkeypatch):
+        import model_tools
+
+        monkeypatch.setenv("HERMES_KEEP_VISION_ANALYZE_TOOL", "1")
+        monkeypatch.setattr(model_tools, "_active_main_model_uses_native_image_input", lambda: True)
+        tools = [_tool_def("vision_analyze"), _tool_def("read_file")]
+
+        filtered = model_tools._filter_redundant_native_vision_tools(tools)
+
+        assert [t["function"]["name"] for t in filtered] == ["vision_analyze", "read_file"]
+
+    def test_quiet_cache_key_changes_when_native_image_routing_changes(self, monkeypatch):
+        import model_tools
+
+        model_tools._clear_tool_defs_cache()
+        cache_keys = []
+        monkeypatch.setattr(model_tools.registry, "_generation", 1)
+        monkeypatch.setattr(model_tools.registry, "get_definitions", lambda *_args, **_kwargs: [])
+        monkeypatch.setattr(model_tools, "_compute_tool_definitions", lambda *_args, **_kwargs: [])
+        monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: Path(__file__))
+
+        monkeypatch.setattr(model_tools, "_active_main_model_uses_native_image_input", lambda: False)
+        model_tools.get_tool_definitions(quiet_mode=True)
+        cache_keys.extend(model_tools._tool_defs_cache.keys())
+
+        monkeypatch.setattr(model_tools, "_active_main_model_uses_native_image_input", lambda: True)
+        model_tools.get_tool_definitions(quiet_mode=True)
+        cache_keys.extend(model_tools._tool_defs_cache.keys())
+
+        assert len(model_tools._tool_defs_cache) == 2
+        assert len(set(cache_keys)) == 2
+        model_tools._clear_tool_defs_cache()
 
 
 # =========================================================================

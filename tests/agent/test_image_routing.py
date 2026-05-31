@@ -73,12 +73,17 @@ class TestExplicitAuxVisionOverride:
 
 
 class TestDecideImageInputMode:
-    def test_explicit_native_overrides_everything(self):
+    def test_explicit_native_keeps_unknown_capability_native(self):
         cfg = {"agent": {"image_input_mode": "native"}}
-        # Non-vision model, aux-vision explicitly configured: native still wins.
+        # Unknown model capabilities: trust the user's explicit native setting.
         cfg["auxiliary"] = {"vision": {"provider": "openrouter", "model": "foo"}}
+        with patch("agent.image_routing._lookup_supports_vision", return_value=None):
+            assert decide_image_input_mode("openrouter", "brand-new-model", cfg) == "native"
+
+    def test_explicit_native_falls_back_for_known_text_only_model(self):
+        cfg = {"agent": {"image_input_mode": "native"}}
         with patch("agent.image_routing._lookup_supports_vision", return_value=False):
-            assert decide_image_input_mode("openrouter", "some-non-vision-model", cfg) == "native"
+            assert decide_image_input_mode("openrouter", "some-non-vision-model", cfg) == "text"
 
     def test_explicit_text_overrides_everything(self):
         cfg = {"agent": {"image_input_mode": "text"}}
@@ -97,11 +102,11 @@ class TestDecideImageInputMode:
         with patch("agent.image_routing._lookup_supports_vision", return_value=None):
             assert decide_image_input_mode("openrouter", "brand-new-slug", {}) == "text"
 
-    def test_auto_respects_aux_vision_override_even_for_vision_model(self):
-        """If the user configured a dedicated vision backend, don't bypass it."""
+    def test_auto_native_for_vision_model_even_with_aux_config(self):
+        """A stale auxiliary vision config must not override native vision."""
         cfg = {"auxiliary": {"vision": {"provider": "openrouter", "model": "google/gemini-2.5-flash"}}}
         with patch("agent.image_routing._lookup_supports_vision", return_value=True):
-            assert decide_image_input_mode("anthropic", "claude-sonnet-4", cfg) == "text"
+            assert decide_image_input_mode("anthropic", "claude-sonnet-4", cfg) == "native"
 
     def test_none_config_is_auto(self):
         with patch("agent.image_routing._lookup_supports_vision", return_value=True):
@@ -126,6 +131,21 @@ class TestDecideImageInputMode:
         }
         with patch("agent.models_dev.fetch_models_dev", return_value=registry):
             assert decide_image_input_mode("xiaomi", "mimo-v2.5-pro", {}) == "text"
+
+    def test_auto_uses_native_for_xiaomi_mimo_v25_even_with_stale_text_modalities(self):
+        registry = {
+            "xiaomi": {
+                "models": {
+                    "mimo-v2.5": {
+                        "attachment": False,
+                        "modalities": {"input": ["text"]},
+                        "tool_call": True,
+                    },
+                },
+            },
+        }
+        with patch("agent.models_dev.fetch_models_dev", return_value=registry):
+            assert decide_image_input_mode("xiaomi", "mimo-v2.5", {}) == "native"
 
 
 # ─── _coerce_capability_bool ─────────────────────────────────────────────────
@@ -279,10 +299,19 @@ class TestAutoModeRespectsOverride:
         with patch("agent.models_dev.get_model_capabilities", return_value=None):
             assert decide_image_input_mode("custom", "unknown", {}) == "text"
 
-    def test_explicit_aux_vision_override_still_wins(self):
-        # If the user has configured a dedicated vision aux backend, respect
-        # it even when supports_vision: true is also set.
+    def test_native_model_override_wins_over_aux_vision_config(self):
+        # Stale auxiliary.vision settings must not make a native multimodal
+        # main model call a separate vision model.
         cfg = {
+            "model": {"supports_vision": True},
+            "auxiliary": {"vision": {"provider": "openrouter", "model": "gemini-2.5-pro"}},
+        }
+        with patch("agent.models_dev.get_model_capabilities", return_value=None):
+            assert decide_image_input_mode("custom", "qwen3.6-35b", cfg) == "native"
+
+    def test_explicit_text_mode_still_forces_aux_pipeline(self):
+        cfg = {
+            "agent": {"image_input_mode": "text"},
             "model": {"supports_vision": True},
             "auxiliary": {"vision": {"provider": "openrouter", "model": "gemini-2.5-pro"}},
         }
@@ -308,10 +337,7 @@ class TestBuildNativeContentParts:
         assert skipped == []
         assert len(parts) == 2
         assert parts[0]["type"] == "text"
-        # User caption is preserved and a per-image path hint is appended so
-        # the model can use the local path as a string argument for tools
-        # that take ``image_url: str`` (issue #18960).
-        assert parts[0]["text"] == f"hello\n\n[Image attached at: {img}]"
+        assert parts[0]["text"] == "hello"
         assert parts[1]["type"] == "image_url"
         assert parts[1]["image_url"]["url"].startswith("data:image/png;base64,")
 
@@ -321,11 +347,9 @@ class TestBuildNativeContentParts:
         parts, skipped = build_native_content_parts("", [str(img)])
         assert skipped == []
         # Even with empty user text, we insert a neutral prompt so the turn
-        # isn't just pixels, and the path hint is appended after.
+        # isn't just pixels.
         assert parts[0]["type"] == "text"
-        assert parts[0]["text"] == (
-            f"What do you see in this image?\n\n[Image attached at: {img}]"
-        )
+        assert parts[0]["text"] == "What do you see in this image?"
         assert parts[1]["type"] == "image_url"
 
     def test_missing_file_is_skipped(self, tmp_path: Path):
@@ -335,20 +359,14 @@ class TestBuildNativeContentParts:
         # would otherwise be told a non-existent file is attached.
         assert parts == [{"type": "text", "text": "hi"}]
 
-    def test_path_hint_appended(self, tmp_path: Path):
-        """The local path of each attached image is appended to the user
-        text part so MCP/skill tools that take ``image_url: str`` can be
-        invoked on the same image (issue #18960). Mirrors text-mode
-        behaviour (`Runner._enrich_message_with_vision`).
-        """
+    def test_local_path_not_exposed_in_text_part(self, tmp_path: Path):
         img = tmp_path / "scan.png"
         img.write_bytes(_png_bytes())
         parts, _ = build_native_content_parts("attach this", [str(img)])
         text_part = next(p for p in parts if p.get("type") == "text")
-        assert "[Image attached at:" in text_part["text"]
-        assert str(img) in text_part["text"]
-        # User caption is preserved verbatim ahead of the hint.
-        assert text_part["text"].startswith("attach this")
+        assert text_part["text"] == "attach this"
+        assert str(img) not in text_part["text"]
+        assert "MEDIA:" not in text_part["text"]
 
     def test_path_hint_one_per_attached_image(self, tmp_path: Path):
         """Each successfully attached image gets its own path hint line;
@@ -362,8 +380,8 @@ class TestBuildNativeContentParts:
         )
         assert skipped == [str(missing)]
         text_part = next(p for p in parts if p.get("type") == "text")
-        assert text_part["text"].count("[Image attached at:") == 1
-        assert str(good) in text_part["text"]
+        assert text_part["text"] == "see attached"
+        assert str(good) not in text_part["text"]
         assert str(missing) not in text_part["text"]
 
     def test_multiple_images(self, tmp_path: Path):
@@ -375,11 +393,10 @@ class TestBuildNativeContentParts:
         assert skipped == []
         image_parts = [p for p in parts if p.get("type") == "image_url"]
         assert len(image_parts) == 2
-        # Both paths surface in the text part, one per line.
         text_part = next(p for p in parts if p.get("type") == "text")
-        assert text_part["text"].count("[Image attached at:") == 2
-        assert str(img1) in text_part["text"]
-        assert str(img2) in text_part["text"]
+        assert text_part["text"] == "compare these"
+        assert str(img1) not in text_part["text"]
+        assert str(img2) not in text_part["text"]
 
     def test_mime_inference_jpg(self, tmp_path: Path):
         # Real JPEG bytes (SOI marker FF D8 FF): sniffing now wins over suffix.
@@ -438,8 +455,8 @@ class TestLargeImageHandling:
         missing = tmp_path / "does_not_exist.png"
         assert _ir._file_to_data_url(missing) is None
 
-    def test_build_native_parts_no_provider_kwarg(self, tmp_path: Path):
-        """build_native_content_parts takes text + paths, no provider kwarg."""
+    def test_build_native_parts_without_provider(self, tmp_path: Path):
+        """provider is optional; default output is standard chat image_url."""
         from agent import image_routing as _ir
 
         img = tmp_path / "cat.png"
@@ -449,6 +466,23 @@ class TestLargeImageHandling:
         assert len(parts) == 2
         assert parts[0]["type"] == "text"
         assert parts[1]["type"] == "image_url"
+
+    def test_xiaomi_keeps_nested_openai_image_url_shape(self, tmp_path: Path):
+        """MiMo image understanding uses the normal chat image_url.url shape."""
+        from agent import image_routing as _ir
+
+        img = tmp_path / "cat.png"
+        img.write_bytes(_png_bytes())
+        parts, skipped = _ir.build_native_content_parts(
+            "看图",
+            [str(img)],
+            provider="xiaomi",
+        )
+
+        assert skipped == []
+        assert parts[1]["type"] == "image_url"
+        assert isinstance(parts[1]["image_url"], dict)
+        assert parts[1]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
 # ─── extract_image_refs ──────────────────────────────────────────────────────
@@ -589,8 +623,7 @@ class TestBuildNativeContentPartsURLs:
         assert skipped == []
         assert len(parts) == 2
         assert parts[0]["type"] == "text"
-        assert "[Image attached: https://example.com/diagram.png]" in parts[0]["text"]
-        assert parts[0]["text"].startswith("what is this?")
+        assert parts[0]["text"] == "what is this?"
         assert parts[1] == {
             "type": "image_url",
             "image_url": {"url": "https://example.com/diagram.png"},
@@ -611,8 +644,7 @@ class TestBuildNativeContentPartsURLs:
         assert image_parts[0]["image_url"]["url"].startswith("data:image/png;base64,")
         assert image_parts[1]["image_url"]["url"] == "https://example.com/remote.jpg"
         text = parts[0]["text"]
-        assert "[Image attached at:" in text
-        assert "[Image attached: https://example.com/remote.jpg]" in text
+        assert text == "compare these"
 
     def test_empty_url_list_is_no_op(self, tmp_path: Path):
         img = tmp_path / "x.png"
@@ -635,4 +667,4 @@ class TestBuildNativeContentPartsURLs:
             "", [], image_urls=["https://example.com/a.png"]
         )
         assert parts[0]["type"] == "text"
-        assert parts[0]["text"].startswith("What do you see in this image?")
+        assert parts[0]["text"] == "What do you see in this image?"

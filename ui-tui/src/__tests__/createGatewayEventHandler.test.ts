@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createGatewayEventHandler } from '../app/createGatewayEventHandler.js'
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
+import { getTuiModuleState, resetTuiModuleState } from '../app/tuiModuleStore.js'
 import { turnController } from '../app/turnController.js'
 import { getTurnState, resetTurnState } from '../app/turnStore.js'
 import { getUiState, patchUiState, resetUiState } from '../app/uiStore.js'
@@ -54,6 +55,7 @@ describe('createGatewayEventHandler', () => {
   beforeEach(() => {
     resetOverlayState()
     resetUiState()
+    resetTuiModuleState()
     resetTurnState()
     turnController.fullReset()
     patchUiState({ showReasoning: true })
@@ -147,10 +149,10 @@ describe('createGatewayEventHandler', () => {
       } as any)
 
       expect(ctx.system.sys).toHaveBeenCalledWith(verdict)
-      expect(getUiState().status).toBe('✓ goal complete')
+      expect(getUiState().status).toBe('✓ 目标已完成')
 
       vi.advanceTimersByTime(6001)
-      expect(getUiState().status).toBe('ready')
+      expect(getUiState().status).toBe('就绪')
     } finally {
       vi.useRealTimers()
     }
@@ -164,13 +166,13 @@ describe('createGatewayEventHandler', () => {
       payload: { kind: 'goal', text: '↻ Continuing toward goal (1/10): reason' },
       type: 'status.update'
     } as any)
-    expect(getUiState().status).toBe('↻ goal continuing')
+    expect(getUiState().status).toBe('↻ 目标继续中')
 
     onEvent({
       payload: { kind: 'goal', text: '⏸ Goal paused — budget exhausted.' },
       type: 'status.update'
     } as any)
-    expect(getUiState().status).toBe('⏸ goal paused')
+    expect(getUiState().status).toBe('⏸ 目标已暂停')
   })
 
   it('surfaces self-improvement review summaries as a persistent system line', () => {
@@ -211,6 +213,20 @@ describe('createGatewayEventHandler', () => {
     onEvent({ payload: { name: 'todo', todos: [], tool_id: 'todo-1' }, type: 'tool.complete' } as any)
 
     expect(getTurnState().todos).toEqual([])
+  })
+
+  it('applies tui.module.update events to the module store', () => {
+    const onEvent = createGatewayEventHandler(buildCtx([]))
+
+    onEvent({
+      payload: { id: 'news_panel', state: 'warning', summary: '3 条更新' },
+      type: 'tui.module.update'
+    } as any)
+
+    expect(getTuiModuleState().snapshots.news_panel).toMatchObject({
+      state: 'warning',
+      summary: '3 条更新'
+    })
   })
 
   it('persists completed tool rows when message.complete lands immediately after tool.complete', () => {
@@ -265,8 +281,8 @@ describe('createGatewayEventHandler', () => {
     const toolTrails = appended.filter(msg => msg.kind === 'trail' && msg.tools?.length)
     expect(toolTrails).toHaveLength(1)
     expect(toolTrails[0]?.tools).toHaveLength(2)
-    expect(toolTrails[0]?.tools?.[0]).toContain('Search Files')
-    expect(toolTrails[0]?.tools?.[1]).toContain('Read File')
+    expect(toolTrails[0]?.tools?.[0]).toContain('搜索文件')
+    expect(toolTrails[0]?.tools?.[1]).toContain('读取文件')
   })
 
   it('keeps tool tokens across handler recreation mid-turn', () => {
@@ -328,12 +344,12 @@ describe('createGatewayEventHandler', () => {
       onEvent({ payload: {}, type: 'message.start' } as any)
       onEvent({ payload: { text: 'final answer' }, type: 'message.complete' } as any)
       expect(getUiState().busy).toBe(false)
-      expect(getUiState().status).toBe('ready')
+      expect(getUiState().status).toBe('就绪')
 
       onEvent({ payload: { text: 'thinking...' }, type: 'thinking.delta' } as any)
       vi.runOnlyPendingTimers()
 
-      expect(getUiState().status).toBe('ready')
+      expect(getUiState().status).toBe('就绪')
       expect(getTurnState().reasoning).toBe('')
     } finally {
       vi.useRealTimers()
@@ -448,7 +464,7 @@ describe('createGatewayEventHandler', () => {
 
     const messages = getTurnState().activity.map(a => a.text)
 
-    expect(messages.some(m => m.includes('gateway startup timed out'))).toBe(true)
+    expect(messages.some(m => m.includes('网关启动超时'))).toBe(true)
     expect(messages.some(m => m.includes('ModuleNotFoundError'))).toBe(true)
     expect(messages.some(m => m.includes('FileNotFoundError'))).toBe(true)
   })
@@ -517,7 +533,7 @@ describe('createGatewayEventHandler', () => {
         kind: 'diff',
         role: 'assistant',
         text: block,
-        tools: [expect.stringMatching(/^Patch\("foo\.ts"\)(?: \([^)]+\))? ✓$/)]
+        tools: [expect.stringMatching(/^🛠️ 修改文件：foo\.ts(?: \([^)]+\))? ✓$/)]
       }
     ])
 
@@ -526,7 +542,7 @@ describe('createGatewayEventHandler', () => {
     expect(appended).toHaveLength(4)
     expect(appended[0]?.text).toBe('Editing the file')
     expect(appended[1]).toMatchObject({ kind: 'diff', text: block })
-    expect(appended[1]?.tools?.[0]).toContain('Patch')
+    expect(appended[1]?.tools?.[0]).toContain('修改文件')
     expect(appended[3]?.text).toBe('patch applied')
     expect(appended[3]?.text).not.toContain('```diff')
   })
@@ -546,8 +562,8 @@ describe('createGatewayEventHandler', () => {
     } as any)
 
     expect(turnController.segmentMessages[0]).toMatchObject({ kind: 'diff' })
-    expect(turnController.segmentMessages[0]?.tools?.[0]).toContain('Args:\n{ "path": "foo.ts" }')
-    expect(turnController.segmentMessages[0]?.tools?.[0]).toContain('Result:\npatched result')
+    expect(turnController.segmentMessages[0]?.tools?.[0]).toContain('参数：\n{ "path": "foo.ts" }')
+    expect(turnController.segmentMessages[0]?.tools?.[0]).toContain('结果：\npatched result')
   })
 
   it('keeps full final responses from duplicating flushed pre-diff narration', () => {
@@ -563,7 +579,7 @@ describe('createGatewayEventHandler', () => {
     onEvent({ payload: { text: 'Before edit. After edit.' }, type: 'message.complete' } as any)
 
     expect(appended.map(msg => msg.text.trim()).filter(Boolean)).toEqual(['Before edit.', block, 'After edit.'])
-    expect(appended[1]?.tools?.[0]).toContain('Patch')
+    expect(appended[1]?.tools?.[0]).toContain('修改文件')
   })
 
   it('drops the diff segment when the final assistant text narrates the same diff', () => {
@@ -595,7 +611,7 @@ describe('createGatewayEventHandler', () => {
     expect(appended[0]?.kind).toBe('diff')
     expect(appended[0]?.text).not.toContain('┊ review diff')
     expect(appended[0]?.text).toContain('--- a/foo.ts')
-    expect(appended[0]?.tools?.[0]).toContain('Tool')
+    expect(appended[0]?.tools?.[0]).toContain('调用工具')
     expect(appended[1]?.text).toBe('done')
   })
 
@@ -653,7 +669,7 @@ describe('createGatewayEventHandler', () => {
     expect(appended).toHaveLength(1)
     expect(appended[0]).toMatchObject({
       kind: 'panel',
-      panelData: { title: 'Setup Required' },
+      panelData: { title: '需要设置' },
       role: 'system'
     })
   })
@@ -827,9 +843,9 @@ describe('createGatewayEventHandler', () => {
     expect(getOverlayState().approval).toMatchObject({ description: 'dangerous command' })
     expect(getTurnState().activity).toMatchObject([
       { text: 'Traceback: noisy but non-fatal', tone: 'info' },
-      { text: 'protocol noise detected · /logs to inspect', tone: 'info' },
-      { text: 'protocol noise: bad framing', tone: 'info' },
-      { text: 'command catalog unavailable: cold start', tone: 'info' }
+      { text: '检测到协议噪音 · 用 /logs 查看', tone: 'info' },
+      { text: '协议噪音：bad framing', tone: 'info' },
+      { text: '命令目录不可用：cold start', tone: 'info' }
     ])
   })
 

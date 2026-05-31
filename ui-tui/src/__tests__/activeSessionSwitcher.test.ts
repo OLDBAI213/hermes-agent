@@ -27,35 +27,35 @@ import {
 
 describe('session orchestrator helpers', () => {
   it('labels live sessions compactly for tight overlays', () => {
-    expect(activeSessionCountLabel(0)).toBe('0 live sessions')
-    expect(activeSessionCountLabel(1)).toBe('1 live session')
-    expect(activeSessionCountLabel(3)).toBe('3 live sessions')
+    expect(activeSessionCountLabel(0)).toBe('0 个实时会话')
+    expect(activeSessionCountLabel(1)).toBe('1 个实时会话')
+    expect(activeSessionCountLabel(3)).toBe('3 个实时会话')
     expect(activeSessionCountLabel(1)).not.toContain('in this TUI')
   })
 
   it('keeps session orchestrator hotkey hints short and contextual', () => {
-    expect(orchestratorContextHint(false)).toBe('Session row: Enter switch · Ctrl+D close')
-    expect(orchestratorContextHint(true)).toBe('New row: type prompt · Enter start · Tab model')
-    expect(orchestratorGlobalHotkeyHint).toBe('↑↓ move · Ctrl+N new · Ctrl+R refresh · Esc close')
+    expect(orchestratorContextHint(false)).toBe('会话行： Enter 切换 · Ctrl+D 关闭')
+    expect(orchestratorContextHint(true)).toBe('新建行： 输入提示词 · Enter 开始 · Tab 模型')
+    expect(orchestratorGlobalHotkeyHint).toBe('↑↓ 移动 · Ctrl+N 新建 · Ctrl+R 刷新 · Esc 关闭')
     expect(orchestratorGlobalHotkeyHint.length).toBeLessThanOrEqual(56)
   })
 
   it('assigns themed colors consistently to orchestrator labels and hotkeys', () => {
     expect(orchestratorContextHintSegments(false)).toEqual([
-      { role: 'label', text: 'Session row:' },
+      { role: 'label', text: '会话行：' },
       { role: 'text', text: ' ' },
       { role: 'hotkey', text: 'Enter' },
-      { role: 'text', text: ' switch · ' },
+      { role: 'text', text: ' 切换 · ' },
       { role: 'hotkey', text: 'Ctrl+D' },
-      { role: 'text', text: ' close' }
+      { role: 'text', text: ' 关闭' }
     ])
     expect(orchestratorContextHintSegments(true)).toEqual([
-      { role: 'label', text: 'New row:' },
-      { role: 'text', text: ' type prompt · ' },
+      { role: 'label', text: '新建行：' },
+      { role: 'text', text: ' 输入提示词 · ' },
       { role: 'hotkey', text: 'Enter' },
-      { role: 'text', text: ' start · ' },
+      { role: 'text', text: ' 开始 · ' },
       { role: 'hotkey', text: 'Tab' },
-      { role: 'text', text: ' model' }
+      { role: 'text', text: ' 模型' }
     ])
     expect(orchestratorGlobalHotkeyHintSegments.filter(s => s.role === 'hotkey').map(s => s.text)).toEqual([
       '↑↓',
@@ -131,7 +131,7 @@ describe('session orchestrator helpers', () => {
   it('shows clean draft model labels without picker flags or provider params', () => {
     expect(draftModelDisplayLabel('kimi-k2.6 --provider ollama-cloud --tui-session')).toBe('kimi-k2.6')
     expect(draftModelDisplayLabel('openai/gpt-5.5 --provider openai-codex --global')).toBe('gpt-5.5')
-    expect(draftModelDisplayLabel('')).toBe('current/default')
+    expect(draftModelDisplayLabel('')).toBe('当前/默认')
   })
 
   it('maps row clicks to existing-session activation or New-row focus', () => {

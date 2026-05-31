@@ -1423,7 +1423,7 @@ async def _send_matrix_via_adapter(pconfig, chat_id, message, media_files=None, 
 
         for media_path, is_voice in media_files:
             if not os.path.exists(media_path):
-                return _error(f"Media file not found: {media_path}")
+                return _error(f"媒体文件不存在: {media_path}")
 
             ext = os.path.splitext(media_path)[1].lower()
             if ext in _IMAGE_EXTS:
@@ -1441,7 +1441,7 @@ async def _send_matrix_via_adapter(pconfig, chat_id, message, media_files=None, 
                 return _error(f"Matrix media send failed: {last_result.error}")
 
         if last_result is None:
-            return {"error": "No deliverable text or media remained after processing MEDIA tags"}
+            return {"error": "没有可发送的文字或媒体内容"}
 
         return {
             "success": True,
@@ -1592,10 +1592,10 @@ async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=No
     try:
         from gateway.platforms.feishu import FeishuAdapter, FEISHU_AVAILABLE
         if not FEISHU_AVAILABLE:
-            return {"error": "Feishu dependencies not installed. Run: pip install 'hermes-agent[feishu]'"}
+            return {"error": "飞书依赖未安装。请运行: pip install 'hermes-agent[feishu]'"}
         from gateway.platforms.feishu import FEISHU_DOMAIN, LARK_DOMAIN
     except ImportError:
-        return {"error": "Feishu dependencies not installed. Run: pip install 'hermes-agent[feishu]'"}
+        return {"error": "飞书依赖未安装。请运行: pip install 'hermes-agent[feishu]'"}
 
     media_files = media_files or []
 
@@ -1610,11 +1610,11 @@ async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=No
         if message.strip():
             last_result = await adapter.send(chat_id, message, metadata=metadata)
             if not last_result.success:
-                return _error(f"Feishu send failed: {last_result.error}")
+                return _error(f"飞书发送失败: {last_result.error}")
 
         for media_path, is_voice in media_files:
             if not os.path.exists(media_path):
-                return _error(f"Media file not found: {media_path}")
+                return _error(f"媒体文件不存在: {media_path}")
 
             ext = os.path.splitext(media_path)[1].lower()
             if ext in _IMAGE_EXTS:
@@ -1629,10 +1629,10 @@ async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=No
                 last_result = await adapter.send_document(chat_id, media_path, metadata=metadata)
 
             if not last_result.success:
-                return _error(f"Feishu media send failed: {last_result.error}")
+                return _error(f"飞书媒体发送失败: {last_result.error}")
 
         if last_result is None:
-            return {"error": "No deliverable text or media remained after processing MEDIA tags"}
+            return {"error": "没有可发送的文字或媒体内容"}
 
         return {
             "success": True,
@@ -1641,7 +1641,7 @@ async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=No
             "message_id": last_result.message_id,
         }
     except Exception as e:
-        return _error(f"Feishu send failed: {e}")
+        return _error(f"飞书发送失败: {e}")
 
 
 def _check_send_message():

@@ -128,6 +128,30 @@ describe('applyDisplay', () => {
     })
   })
 
+  it('hydrates display.tui_modules into the TUI module config map', () => {
+    const setBell = vi.fn()
+
+    applyDisplay(
+      {
+        config: {
+          display: {
+            tui_modules: {
+              news_panel: { enabled: true, slot: 'transcript.live_tail' },
+              stock_panel: false
+            }
+          }
+        }
+      },
+      setBell
+    )
+
+    expect($uiState.get().tuiModules.news_panel).toMatchObject({
+      enabled: true,
+      slot: 'transcript.live_tail'
+    })
+    expect($uiState.get().tuiModules.stock_panel).toMatchObject({ enabled: false })
+  })
+
   it('drops invalid section modes', () => {
     const setBell = vi.fn()
 

@@ -1692,6 +1692,24 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
             pass
     if block_message is not None:
         return json.dumps({"error": block_message}, ensure_ascii=False)
+    if not pre_tool_block_checked and agent._memory_manager:
+        try:
+            memory_decision = agent._memory_manager.check_tool_safety(
+                function_name,
+                function_args,
+                session_id=agent.session_id or "",
+                platform=getattr(agent, "platform", "") or "",
+            )
+        except Exception:
+            memory_decision = None
+        if memory_decision and memory_decision.get("action") == "block":
+            return json.dumps(
+                {
+                    "error": memory_decision.get("message", "Blocked by memory"),
+                    "memory_guardrail": memory_decision,
+                },
+                ensure_ascii=False,
+            )
 
     if function_name == "todo":
         from tools.todo_tool import todo_tool as _todo_tool

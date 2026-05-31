@@ -36,7 +36,7 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/redraw')).toBe(true)
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('ui redrawn')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('界面已重绘')
   })
 
   it('handles /tui-doctor locally and reports module state', () => {
@@ -115,7 +115,7 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/update')).toBe(true)
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('exiting TUI to run update...')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('正在退出 TUI 并运行更新...')
 
     // Advance past the 100ms setTimeout
     vi.advanceTimersByTime(150)
@@ -126,14 +126,14 @@ describe('createSlashHandler', () => {
 
   it('routes /status to live session.status instead of slash worker', async () => {
     patchUiState({ sid: 'sid-abc' })
-    const rpc = vi.fn(() => Promise.resolve({ output: 'Hermes TUI Status' }))
+    const rpc = vi.fn(() => Promise.resolve({ output: 'Hermes TUI 状态' }))
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/status')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('session.status', { session_id: 'sid-abc' })
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
     await vi.waitFor(() => {
-      expect(ctx.transcript.page).toHaveBeenCalledWith('Hermes TUI Status', 'Status')
+      expect(ctx.transcript.page).toHaveBeenCalledWith('Hermes TUI 状态', '状态')
     })
   })
 
@@ -293,7 +293,7 @@ describe('createSlashHandler', () => {
     createSlashHandler(ctx)('/new sprint planning')
     getOverlayState().confirm?.onConfirm()
 
-    expect(ctx.session.newSession).toHaveBeenCalledWith('new session started', 'sprint planning')
+    expect(ctx.session.newSession).toHaveBeenCalledWith('新会话已开始', 'sprint planning')
     expect(ctx.gateway.rpc).not.toHaveBeenCalled()
   })
 
@@ -307,7 +307,7 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('session.branch', { name: 'branch title', session_id: 'sid-parent' })
     await vi.waitFor(() => {
       expect(getUiState().sid).toBe('sid-branch')
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('branched → branch title')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('已创建分支 → branch title')
     })
     expect(ctx.transcript.setHistoryItems).not.toHaveBeenCalled()
   })
@@ -328,7 +328,7 @@ describe('createSlashHandler', () => {
 
     expect(rpc).toHaveBeenCalledWith('skills.reload', {})
     await vi.waitFor(() => {
-      expect(ctx.transcript.page).toHaveBeenCalledWith('42 skill(s) available', 'Reload Skills')
+      expect(ctx.transcript.page).toHaveBeenCalledWith('42 skill(s) available', '重载技能')
       expect(ctx.local.setCatalog).toHaveBeenCalledWith(
         expect.objectContaining({ canon: { '/new-skill': '/new-skill' }, pairs: [['/new-skill', 'demo']] })
       )
@@ -347,7 +347,7 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/voice status')).toBe(true)
     await vi.waitFor(() => {
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('  Record key: Ctrl+Space')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('  录音键：Ctrl+Space')
     })
     expect(ctx.voice.setVoiceRecordKey).toHaveBeenCalledWith(
       expect.objectContaining({ ch: 'space', mod: 'ctrl', named: 'space' })
@@ -360,8 +360,8 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/voice on')).toBe(true)
     await vi.waitFor(() => {
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('Voice mode enabled')
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('  Alt+R to start/stop recording')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('语音模式已开启')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('  按 Alt+R 开始/停止录音')
     })
     expect(ctx.voice.setVoiceRecordKey).toHaveBeenCalledWith(expect.objectContaining({ ch: 'r', mod: 'alt' }))
   })
@@ -372,7 +372,7 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/voice status')).toBe(true)
     await vi.waitFor(() => {
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('  Record key: Ctrl+B')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('  录音键：Ctrl+B')
     })
   })
 
@@ -387,7 +387,7 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/voice tts')).toBe(true)
     await vi.waitFor(() => {
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('Voice TTS enabled.')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('语音 TTS 已开启。')
     })
     expect(ctx.voice.setVoiceRecordKey).not.toHaveBeenCalled()
   })
@@ -409,7 +409,7 @@ describe('createSlashHandler', () => {
       key: 'details_mode',
       value: 'expanded'
     })
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('details: expanded')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('详情显示：expanded')
   })
 
   it('sets a per-section override and persists it under details_mode.<section>', () => {
@@ -421,7 +421,7 @@ describe('createSlashHandler', () => {
       key: 'details_mode.activity',
       value: 'hidden'
     })
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('details activity: hidden')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('详情分区 activity：hidden')
   })
 
   it('clears a per-section override on /details <section> reset', () => {
@@ -435,23 +435,23 @@ describe('createSlashHandler', () => {
       key: 'details_mode.tools',
       value: ''
     })
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('details tools: reset')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('详情分区 tools：重置')
   })
 
   it('rejects unknown section modes with a usage hint', () => {
     const ctx = buildCtx()
     createSlashHandler(ctx)('/details tools blink')
     expect(getUiState().sections.tools).toBeUndefined()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('usage: /details <section> [hidden|collapsed|expanded|reset]')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('用法: /details <section> [hidden|collapsed|expanded|reset]')
   })
 
   it('shows tool enable usage when names are missing', () => {
     const ctx = buildCtx()
 
     expect(createSlashHandler(ctx)('/tools enable')).toBe(true)
-    expect(ctx.transcript.sys).toHaveBeenNthCalledWith(1, 'usage: /tools enable <name> [name ...]')
-    expect(ctx.transcript.sys).toHaveBeenNthCalledWith(2, 'built-in toolset: /tools enable web')
-    expect(ctx.transcript.sys).toHaveBeenNthCalledWith(3, 'MCP tool: /tools enable github:create_issue')
+    expect(ctx.transcript.sys).toHaveBeenNthCalledWith(1, '用法: /tools enable <name> [name ...]')
+    expect(ctx.transcript.sys).toHaveBeenNthCalledWith(2, '内置工具集：/tools enable web')
+    expect(ctx.transcript.sys).toHaveBeenNthCalledWith(3, 'MCP 工具：/tools enable github:create_issue')
   })
 
   it.each([
@@ -487,7 +487,7 @@ describe('createSlashHandler', () => {
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/browser connect')).toBe(true)
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('checking Chromium-family browser remote debugging at http://127.0.0.1:9222...')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('正在检查 Chromium 系浏览器远程调试：http://127.0.0.1:9222...')
 
     await vi.waitFor(() => {
       expect(ctx.transcript.sys).toHaveBeenCalledWith(
@@ -525,7 +525,7 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/indicator sparkle')).toBe(true)
     expect(rpc).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('usage: /indicator [ascii|emoji|kaomoji|unicode]')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('用法: /indicator [ascii|emoji|kaomoji|unicode]')
   })
 
   it('drops stale slash.exec output after a newer slash', async () => {
@@ -630,7 +630,7 @@ describe('createSlashHandler', () => {
         session_id: null
       })
     })
-    expect(ctx.transcript.sys).not.toHaveBeenCalledWith(expect.stringContaining('ambiguous command'))
+    expect(ctx.transcript.sys).not.toHaveBeenCalledWith(expect.stringContaining('命令不明确'))
   })
 
   it('keeps ambiguous prefix handling when there is no exact catalog match', () => {
@@ -646,7 +646,7 @@ describe('createSlashHandler', () => {
     })
 
     expect(createSlashHandler(ctx)('/stat')).toBe(true)
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('ambiguous command: /status, /statusbar')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('命令不明确：/status, /statusbar')
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
   })
 
@@ -676,7 +676,7 @@ describe('createSlashHandler', () => {
     const h = createSlashHandler(ctx)
     expect(h('/hermes-agent-dev')).toBe(true)
     await vi.waitFor(() => {
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('⚡ loading skill: hermes-agent-dev')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('⚡ 正在加载技能：hermes-agent-dev')
     })
     expect(ctx.transcript.send).toHaveBeenCalledWith(skillMessage)
   })
@@ -699,12 +699,12 @@ describe('createSlashHandler', () => {
 
     const [body, title] = ctx.transcript.page.mock.calls[0]!
 
-    expect(title).toBe('History')
-    expect(body).toContain('[You #1]')
+    expect(title).toBe('历史记录')
+    expect(body).toContain('[你 #1]')
     expect(body).toContain('hello')
     expect(body).toContain('[Hermes #2]')
     expect(body).toContain('hi there')
-    expect(body).toContain('[You #3]')
+    expect(body).toContain('[你 #3]')
     expect(body).not.toContain('ignore me')
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
   })
@@ -714,7 +714,7 @@ describe('createSlashHandler', () => {
 
     createSlashHandler(ctx)('/history')
     expect(ctx.transcript.page).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('no conversation yet')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('还没有对话')
   })
 
   it('/save forwards to session.save RPC and reports the returned file', async () => {
@@ -740,7 +740,7 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('session.save', { session_id: 'sid-abc' })
 
     await vi.waitFor(() => {
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('conversation saved to: /tmp/hermes_conversation_test.json')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('会话已保存到：/tmp/hermes_conversation_test.json')
     })
   })
 
@@ -752,7 +752,7 @@ describe('createSlashHandler', () => {
 
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
     expect(rpc).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('no conversation yet')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('还没有对话')
   })
 
   it('/save without an active session tells the user instead of hitting the RPC', () => {
@@ -770,7 +770,7 @@ describe('createSlashHandler', () => {
     createSlashHandler(ctx)('/save')
 
     expect(rpc).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('no active session — nothing to save')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('没有活动会话，无法保存')
   })
 
   it('/rollback without an active session tells the user instead of hitting the RPC', () => {
@@ -780,7 +780,7 @@ describe('createSlashHandler', () => {
     createSlashHandler(ctx)('/rollback')
 
     expect(rpc).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('no active session — nothing to rollback')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith('没有活动会话，无法回滚')
   })
 
   it('/title <name> uses session.title RPC and bypasses slash.exec', async () => {
@@ -793,7 +793,7 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('session.title', { session_id: 'sid-abc', title: 'my title' })
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
     await vi.waitFor(() => {
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('session title set: my title')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('会话标题已设置：my title')
     })
   })
 
@@ -807,7 +807,7 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('session.title', { session_id: 'sid-abc' })
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
     await vi.waitFor(() => {
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('title: demo title')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith('标题：demo title')
     })
   })
 })

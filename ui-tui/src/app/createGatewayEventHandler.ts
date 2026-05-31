@@ -18,12 +18,13 @@ import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
 import type { GatewayEventHandlerContext } from './interfaces.js'
 import { patchOverlayState } from './overlayStore.js'
+import { upsertTuiModuleSnapshot } from './tuiModuleStore.js'
 import { turnController } from './turnController.js'
 import { getUiState, patchUiState } from './uiStore.js'
 
 const NO_PROVIDER_RE = /\bNo (?:LLM|inference) provider configured\b/i
 
-const statusFromBusy = () => (getUiState().busy ? 'running…' : 'ready')
+  const statusFromBusy = () => (getUiState().busy ? '运行中…' : '就绪')
 
 const applySkin = (s: GatewaySkin) =>
   patchUiState({
@@ -86,6 +87,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   let pendingThinkingStatus = ''
   let thinkingStatusTimer: null | ReturnType<typeof setTimeout> = null
   let startupPromptSubmitted = false
+  const seenSessionWarnings = new Set<string>()
 
   // Inject the disk-save callback into turnController so recordMessageComplete
   // can fire-and-forget a persist without having to plumb a gateway ref around.
@@ -168,6 +170,18 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     }, ms)
   }
 
+  const showSessionWarning = (message?: string) => {
+    const text = String(message ?? '').trim()
+
+    if (!text || seenSessionWarnings.has(text)) {
+      return
+    }
+
+    seenSessionWarnings.add(text)
+    sys(`警告：${text}`)
+    turnController.pushActivity(text, 'warn')
+  }
+
   const scheduleStartupPrompt = () => {
     if (startupPromptSubmitted || (!STARTUP_QUERY && !STARTUP_IMAGE)) {
       return
@@ -183,14 +197,14 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       }
 
       if (!sid) {
-        return sys('startup query skipped: no active session')
+        return sys('启动请求已跳过：没有活动会话')
       }
 
       if (STARTUP_IMAGE) {
         try {
           await rpc('image.attach', { path: STARTUP_IMAGE, session_id: sid })
         } catch (e) {
-          sys(`startup image attach failed: ${rpcErrorMessage(e)}`)
+          sys(`启动图片附加失败：${rpcErrorMessage(e)}`)
         }
       }
 
@@ -229,10 +243,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           turnController.pushActivity(String(r.warning), 'warn')
         }
       })
-      .catch((e: unknown) => turnController.pushActivity(`command catalog unavailable: ${rpcErrorMessage(e)}`, 'info'))
+      .catch((e: unknown) => turnController.pushActivity(`命令目录不可用：${rpcErrorMessage(e)}`, 'info'))
 
     if (STARTUP_RESUME_ID) {
-      patchUiState({ status: 'resuming…' })
+      patchUiState({ status: '正在恢复…' })
       resumeById(STARTUP_RESUME_ID)
       scheduleStartupPrompt()
 
@@ -248,7 +262,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     rpc<ConfigFullResponse>('config.get', { key: 'full' })
       .then(cfg => {
         if (!cfg?.config?.display?.tui_auto_resume_recent) {
-          patchUiState({ status: 'forging session…' })
+          patchUiState({ status: '正在创建会话…' })
           newSession()
           scheduleStartupPrompt()
 
@@ -259,20 +273,20 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           const target = r?.session_id
 
           if (target) {
-            patchUiState({ status: 'resuming most recent…' })
+            patchUiState({ status: '正在恢复最近会话…' })
             resumeById(target)
             scheduleStartupPrompt()
 
             return
           }
 
-          patchUiState({ status: 'forging session…' })
+          patchUiState({ status: '正在创建会话…' })
           newSession()
           scheduleStartupPrompt()
         })
       })
       .catch(() => {
-        patchUiState({ status: 'forging session…' })
+        patchUiState({ status: '正在创建会话…' })
         newSession()
         scheduleStartupPrompt()
       })
@@ -300,14 +314,20 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       case 'session.info': {
         const info = ev.payload
 
+        if (!info) {
+          return
+        }
+
         patchUiState(state => ({
           ...state,
           info,
-          status: state.status === 'starting agent…' ? 'ready' : state.status,
+          status: state.status === '正在启动 Agent…' ? '就绪' : state.status,
           usage: info.usage ? { ...state.usage, ...info.usage } : state.usage
         }))
 
         setHistoryItems(prev => prev.map(m => (m.kind === 'intro' ? { ...m, info } : m)))
+        showSessionWarning(info.credential_warning)
+        showSessionWarning(info.config_warning)
 
         return
       }
@@ -342,16 +362,26 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           return
         }
 
+        if (p.kind === 'model') {
+          const modelTrail = `模型：${p.text}`
+
+          setStatus(p.text)
+          turnController.pushTrail(modelTrail)
+          restoreStatusAfter(4000)
+
+          return
+        }
+
         if (p.kind === 'goal') {
           sys(p.text)
 
           const brief = p.text.startsWith('✓')
-            ? '✓ goal complete'
+            ? '✓ 目标已完成'
             : p.text.startsWith('↻')
-              ? '↻ goal continuing'
+              ? '↻ 目标继续中'
               : p.text.startsWith('⏸')
-                ? '⏸ goal paused'
-                : 'ready'
+                ? '⏸ 目标已暂停'
+                : '就绪'
 
           setStatus(brief)
           restoreStatusAfter(6000)
@@ -383,6 +413,11 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         return
       }
+
+      case 'tui.module.update':
+        upsertTuiModuleSnapshot(ev.payload)
+
+        return
 
       case 'gateway.stderr': {
         const line = String(ev.payload.line).slice(0, 120)
@@ -428,7 +463,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           setVoiceEnabled(false)
           setVoiceRecording(false)
           setVoiceProcessing(false)
-          sys('voice: no speech detected 3 times, continuous mode stopped')
+          sys('语音：连续 3 次未检测到语音，连续模式已停止')
 
           return
         }
@@ -457,8 +492,8 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         const { cwd, python, stderr_tail: stderrTail } = ev.payload ?? {}
         const trace = python || cwd ? ` · ${String(python || '')} ${String(cwd || '')}`.trim() : ''
 
-        setStatus('gateway startup timeout')
-        turnController.pushActivity(`gateway startup timed out${trace} · /logs to inspect`, 'error')
+        setStatus('网关启动超时')
+        turnController.pushActivity(`网关启动超时${trace} · 用 /logs 查看`, 'error')
 
         // Surface the most useful stderr lines inline so users can tell
         // "wrong python", "missing dep", and "config parse failure"
@@ -483,16 +518,16 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       }
 
       case 'gateway.protocol_error':
-        setStatus('protocol warning')
+        setStatus('协议警告')
         restoreStatusAfter(4000)
 
         if (!turnController.protocolWarned) {
           turnController.protocolWarned = true
-          turnController.pushActivity('protocol noise detected · /logs to inspect', 'info')
+          turnController.pushActivity('检测到协议噪音 · 用 /logs 查看', 'info')
         }
 
         if (ev.payload?.preview) {
-          turnController.pushActivity(`protocol noise: ${String(ev.payload.preview).slice(0, 120)}`, 'info')
+          turnController.pushActivity(`协议噪音：${String(ev.payload.preview).slice(0, 120)}`, 'info')
         }
 
         return
@@ -518,7 +553,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
       case 'tool.generating':
         if (ev.payload?.name) {
-          turnController.pushTrail(`drafting ${ev.payload.name}…`)
+          turnController.pushTrail(`正在准备 ${ev.payload.name}…`)
         }
 
         return
@@ -567,21 +602,21 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         patchOverlayState({
           clarify: { choices: ev.payload.choices, question: ev.payload.question, requestId: ev.payload.request_id }
         })
-        setStatus('waiting for input…')
+        setStatus('等待输入…')
 
         return
       case 'approval.request': {
         const description = String(ev.payload.description ?? 'dangerous command')
 
         patchOverlayState({ approval: { command: String(ev.payload.command ?? ''), description } })
-        setStatus('approval needed')
+        setStatus('需要审批')
 
         return
       }
 
       case 'sudo.request':
         patchOverlayState({ sudo: { requestId: ev.payload.request_id } })
-        setStatus('sudo password needed')
+        setStatus('需要 sudo 密码')
 
         return
 
@@ -589,13 +624,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         patchOverlayState({
           secret: { envVar: ev.payload.env_var, prompt: ev.payload.prompt, requestId: ev.payload.request_id }
         })
-        setStatus('secret input needed')
+        setStatus('需要输入密钥')
 
         return
 
       case 'background.complete':
         dropBgTask(ev.payload.task_id)
-        sys(`[bg ${ev.payload.task_id}] ${ev.payload.text}`)
+        sys(`[后台任务 ${ev.payload.task_id}] ${ev.payload.text}`)
 
         return
       case 'review.summary': {
@@ -719,7 +754,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           }
         }
 
-        setStatus('ready')
+        setStatus('就绪')
 
         if (ev.payload?.usage) {
           patchUiState(state => ({ ...state, usage: { ...state.usage, ...ev.payload!.usage } }))
@@ -738,13 +773,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
           if (NO_PROVIDER_RE.test(message)) {
             panel(SETUP_REQUIRED_TITLE, buildSetupRequiredSections())
-            setStatus('setup required')
+            setStatus('需要设置')
 
             return
           }
 
-          sys(`error: ${message}`)
-          setStatus('ready')
+          sys(`错误：${message}`)
+          setStatus('就绪')
         }
     }
   }

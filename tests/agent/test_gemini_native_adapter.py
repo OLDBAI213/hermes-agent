@@ -118,6 +118,26 @@ def test_build_native_request_strips_json_schema_only_fields_from_tool_parameter
     params = request["tools"][0]["functionDeclarations"][0]["parameters"]
     assert "$schema" not in params
     assert "additionalProperties" not in params
+
+
+def test_build_native_request_accepts_inline_image_url_string():
+    from agent.gemini_native_adapter import build_gemini_request
+
+    request = build_gemini_request(
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "看图"},
+                {"type": "image_url", "image_url": "data:image/png;base64,iVBORw0KGgo="},
+            ],
+        }],
+        tools=[],
+        tool_choice=None,
+    )
+
+    parts = request["contents"][0]["parts"]
+    assert parts[0]["text"] == "看图"
+    assert parts[1]["inlineData"]["mimeType"] == "image/png"
     assert params["type"] == "object"
     assert params["properties"]["city"] == {
         "type": "string",

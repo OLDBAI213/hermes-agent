@@ -42,7 +42,7 @@ export const MessageLine = memo(function MessageLine({
   // we might consume here once and gate visibility on the *content-bearing*
   // sections only — never on the global mode.  A `trail` message feeds Tool
   // calls + Activity; an assistant message with thinking/tools metadata
-  // feeds Thinking + Tool calls.  Gating on every section would let
+  // feeds Thinking plus tool activity. Gating on every section would let
   // `thinking` (expanded by default) keep an empty wrapper alive when only
   // `tools` is hidden — exactly the empty-Box bug Copilot caught.
   const thinkingMode = sectionMode('thinking', detailsMode, sections, detailsModeCommandOverride)
@@ -88,7 +88,7 @@ export const MessageLine = memo(function MessageLine({
     const maxChars = Math.max(24, cols - 14)
     const stripped = hasAnsi(msg.text) ? stripAnsi(msg.text) : msg.text
     const safeAnsi = hasAnsi(msg.text) ? sanitizeAnsiForRender(msg.text) : msg.text
-    const preview = compactPreview(stripped, maxChars) || '(empty tool result)'
+    const preview = compactPreview(stripped, maxChars) || '工具结果为空'
 
     return (
       <Box alignSelf="flex-start" borderColor={t.color.muted} borderStyle="round" marginLeft={3} paddingX={1}>
@@ -131,7 +131,7 @@ export const MessageLine = memo(function MessageLine({
             <Text color={t.color.muted}>{firstLine}</Text>
             <Text color={t.color.muted} dimColor>
               {' — '}
-              {msg.text.length.toLocaleString()} chars
+              {msg.text.length.toLocaleString()} 字符
             </Text>
           </Box>
           {systemOpen && <Ansi>{sanitizeAnsiForRender(msg.text)}</Ansi>}
@@ -206,7 +206,7 @@ export const MessageLine = memo(function MessageLine({
             <Text color={t.color.border}>└─ </Text>
           </NoSelect>
           <Text color={t.color.muted} dim>
-            Response
+            回复
           </Text>
         </Box>
       )}

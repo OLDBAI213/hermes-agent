@@ -83,6 +83,7 @@ export interface ConfigDisplayConfig {
   thinking_mode?: string
   tui_auto_resume_recent?: boolean
   tui_compact?: boolean
+  tui_modules?: Record<string, unknown>
   /** Legacy alias for display.mouse_tracking. */
   tui_mouse?: boolean | null | number | string
   // Forward-compat: backend may send styles this client doesn't know yet —

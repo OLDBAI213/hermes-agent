@@ -48,7 +48,7 @@ export async function terminalParityHints(
     hints.push({
       key: 'ide-setup',
       tone: 'info',
-      message: `Detected ${ctx.vscodeLike} terminal · run /terminal-setup for best Cmd+Enter / undo parity`
+      message: `检测到 ${ctx.vscodeLike} 终端 · 运行 /terminal-setup 可改善 Cmd+Enter 和撤销体验`
     })
   }
 
@@ -57,7 +57,7 @@ export async function terminalParityHints(
       key: 'apple-terminal',
       tone: 'warn',
       message:
-        'Apple Terminal detected · use /paste for image-only clipboard fallback, and try Ctrl+A / Ctrl+E / Ctrl+U if Cmd+←/→/⌫ gets rewritten'
+        '检测到 Apple Terminal · 图片剪贴板可用 /paste 兜底；如果 Cmd+←/→/⌫ 被改写，可试 Ctrl+A / Ctrl+E / Ctrl+U'
     })
   }
 
@@ -66,7 +66,7 @@ export async function terminalParityHints(
       key: 'tmux',
       tone: 'warn',
       message:
-        'tmux detected · clipboard copy/paste uses passthrough when available; allow-passthrough improves OSC52 reliability'
+        '检测到 tmux · 剪贴板复制/粘贴会尽量使用 passthrough；开启 allow-passthrough 可提升 OSC52 稳定性'
     })
   }
 
@@ -75,7 +75,7 @@ export async function terminalParityHints(
       key: 'remote',
       tone: 'warn',
       message:
-        'SSH session detected · text clipboard can bridge via OSC52, but image clipboard and local screenshot paths still depend on the machine running Hermes'
+        '检测到 SSH 会话 · 文本剪贴板可通过 OSC52 桥接，但图片剪贴板和本地截图路径仍取决于运行 Hermes 的机器'
     })
   }
 

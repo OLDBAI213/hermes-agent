@@ -120,6 +120,32 @@ class TestBusySessionAck:
         running_agent.interrupt.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_handle_message_queue_mode_preserves_media_urls(self):
+        """Queued media follow-ups must keep attachments for the next turn."""
+        from gateway.run import GatewayRunner
+
+        runner, _sentinel = _make_runner()
+        adapter = _make_adapter()
+
+        event = _make_event(text="看这张图")
+        event.media_urls = [r"E:\AI\hermes\image_cache\queued.png"]
+        event.media_types = ["image/png"]
+        sk = build_session_key(event.source)
+
+        running_agent = MagicMock()
+        runner._busy_input_mode = "queue"
+        runner.adapters[event.source.platform] = adapter
+        runner._running_agents[sk] = running_agent
+
+        result = await GatewayRunner._handle_message(runner, event)
+
+        assert result is None
+        queued = adapter._pending_messages[sk]
+        assert queued.media_urls == [r"E:\AI\hermes\image_cache\queued.png"]
+        assert queued.media_types == ["image/png"]
+        running_agent.interrupt.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_sends_ack_when_agent_running(self):
         """First message during busy session should get a status ack."""
         runner, sentinel = _make_runner()

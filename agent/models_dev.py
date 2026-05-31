@@ -479,7 +479,11 @@ def get_model_capabilities(provider: str, model: str) -> Optional[ModelCapabilit
         input_mods = input_mods.get("input")
     else:
         input_mods = None
-    if isinstance(input_mods, list):
+    if provider == "xiaomi" and model in {"mimo-v2.5", "mimo-v2-omni"}:
+        # Xiaomi documents these as image-understanding models even when
+        # models.dev metadata omits or stales the modalities block.
+        supports_vision = True
+    elif isinstance(input_mods, list):
         supports_vision = "image" in input_mods
     else:
         supports_vision = bool(entry.get("attachment", False))

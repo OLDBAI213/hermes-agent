@@ -2,6 +2,7 @@ import { atom, computed } from 'nanostores'
 
 import { MOUSE_TRACKING } from '../config/env.js'
 import { ZERO } from '../domain/usage.js'
+import { normalizeTuiModules } from '../domain/tuiModules.js'
 import { DEFAULT_THEME } from '../theme.js'
 
 import { DEFAULT_INDICATOR_STYLE, type UiState } from './interfaces.js'
@@ -24,10 +25,11 @@ const buildUiState = (): UiState => ({
   showCost: false,
   showReasoning: false,
   sid: null,
-  status: 'summoning hermes…',
+  status: '正在唤起 Hermes…',
   statusBar: 'top',
   streaming: true,
   theme: DEFAULT_THEME,
+  tuiModules: normalizeTuiModules(undefined),
   usage: ZERO
 })
 

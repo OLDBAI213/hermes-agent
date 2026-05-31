@@ -17,8 +17,8 @@ export interface RunExternalSetupOptions {
 export async function runExternalSetup({ args, ctx, done, launcher, suspend }: RunExternalSetupOptions) {
   const { gateway, session, transcript } = ctx
 
-  transcript.sys(`launching \`hermes ${args.join(' ')}\`…`)
-  patchUiState({ status: 'setup running…' })
+  transcript.sys(`正在启动 \`hermes ${args.join(' ')}\`…`)
+  patchUiState({ status: '设置中…' })
 
   let result: LaunchResult = { code: null }
 
@@ -27,15 +27,15 @@ export async function runExternalSetup({ args, ctx, done, launcher, suspend }: R
   })
 
   if (result.error) {
-    transcript.sys(`error launching hermes: ${result.error}`)
-    patchUiState({ status: 'setup required' })
+    transcript.sys(`启动 Hermes 失败：${result.error}`)
+    patchUiState({ status: '需要设置' })
 
     return
   }
 
   if (result.code !== 0) {
-    transcript.sys(`hermes ${args[0]} exited with code ${result.code}`)
-    patchUiState({ status: 'setup required' })
+    transcript.sys(`hermes ${args[0]} 已退出，退出码 ${result.code}`)
+    patchUiState({ status: '需要设置' })
 
     return
   }
@@ -43,8 +43,8 @@ export async function runExternalSetup({ args, ctx, done, launcher, suspend }: R
   const setup = await gateway.rpc<SetupStatusResponse>('setup.status', {})
 
   if (setup?.provider_configured === false) {
-    transcript.sys('still no provider configured')
-    patchUiState({ status: 'setup required' })
+    transcript.sys('仍未配置模型提供商')
+    patchUiState({ status: '需要设置' })
 
     return
   }

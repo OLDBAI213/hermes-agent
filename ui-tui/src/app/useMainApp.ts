@@ -34,6 +34,7 @@ import { getInputSelection } from './inputSelectionStore.js'
 import { type GatewayRpc, type TranscriptRow } from './interfaces.js'
 import { $overlayState, patchOverlayState } from './overlayStore.js'
 import { scrollWithSelectionBy } from './scroll.js'
+import { markTuiModulesStale } from './tuiModuleStore.js'
 import { turnController } from './turnController.js'
 import { patchTurnState, useTurnSelector } from './turnStore.js'
 import { $uiState, getUiState, patchUiState } from './uiStore.js'
@@ -58,15 +59,15 @@ const capHistory = (items: Msg[]): Msg[] => {
 }
 
 const statusColorOf = (status: string, t: { error: string; muted: string; ok: string; warn: string }) => {
-  if (status === 'ready') {
+  if (status === 'ready' || status === '就绪') {
     return t.ok
   }
 
-  if (status.startsWith('error')) {
+  if (status.startsWith('error') || status.startsWith('错误')) {
     return t.error
   }
 
-  if (status === 'interrupted') {
+  if (status === 'interrupted' || status === '已中断') {
     return t.warn
   }
 
@@ -104,10 +105,10 @@ export async function startPromptLiveSession({
   // the initial title. Auto-title generation can rename it after the first
   // response; pre-queuing prompt text here causes duplicate-title errors when
   // users dispatch common prompts like "Hello, what model are you?".
-  const sid = (await newLiveSession('new live session started')) ?? null
+  const sid = (await newLiveSession('新的实时会话已启动')) ?? null
 
   if (!sid) {
-    sys('error: failed to start new live session')
+    sys('错误：启动新实时会话失败')
 
     return null
   }
@@ -118,12 +119,12 @@ export async function startPromptLiveSession({
     const result = await rpc<ConfigSetResponse>('config.set', { key: 'model', session_id: sid, value: requestedModel })
 
     if (!result?.value) {
-      sys('error: invalid response: model switch')
+      sys('错误：模型切换返回无效响应')
 
       return sid
     }
 
-    sys(`model → ${result.value}`)
+    sys(`模型 → ${result.value}`)
     maybeWarn(result)
     onModelSwitched?.(result.value, result)
   }
@@ -412,7 +413,7 @@ export function useMainApp(gw: GatewayClient) {
       const warning = (value as { warning?: unknown } | null)?.warning
 
       if (typeof warning === 'string' && warning) {
-        sys(`warning: ${warning}`)
+        sys(`警告：${warning}`)
       }
     },
     [sys]
@@ -436,9 +437,9 @@ export function useMainApp(gw: GatewayClient) {
           return result
         }
 
-        sys(`error: invalid response: ${method}`)
+        sys(`错误：${method} 返回无效响应`)
       } catch (e) {
-        sys(`error: ${rpcErrorMessage(e)}`)
+        sys(`错误：${rpcErrorMessage(e)}`)
       }
 
       return null
@@ -591,9 +592,9 @@ export function useMainApp(gw: GatewayClient) {
             tools: [buildToolTrailLine('clarify', clarify.question)]
           })
           appendMessage({ role: 'user', text: answer })
-          patchUiState({ status: 'running…' })
+          patchUiState({ status: '运行中…' })
         } else {
-          sys('prompt cancelled')
+          sys('提示词已取消')
         }
 
         patchOverlayState({ clarify: null })
@@ -612,11 +613,11 @@ export function useMainApp(gw: GatewayClient) {
         if (r.attached) {
           const meta = imageTokenMeta(r)
 
-          return sys(`📎 Image #${r.count} attached from clipboard${meta ? ` · ${meta}` : ''}`)
+            return sys(`📎 已从剪贴板附加图片 #${r.count}${meta ? ` · ${meta}` : ''}`)
         }
 
         if (!quiet) {
-          sys(r.message || 'No image found in clipboard')
+          sys(r.message || '剪贴板中没有图片')
         }
       }),
     [rpc, sys]
@@ -655,7 +656,7 @@ export function useMainApp(gw: GatewayClient) {
     const next = composerActions.dequeue()
 
     if (next) {
-      patchUiState({ busy: true, status: 'running…' })
+      patchUiState({ busy: true, status: '运行中…' })
       sendQueued(next)
     }
   }, [ui.sid, ui.busy, composerActions, composerRefs, sendQueued])
@@ -734,9 +735,10 @@ export function useMainApp(gw: GatewayClient) {
 
     const exitHandler = () => {
       turnController.reset()
-      patchUiState({ busy: false, sid: null, status: 'gateway exited' })
-      turnController.pushActivity('gateway exited · /logs to inspect', 'error')
-      sys('error: gateway exited')
+      markTuiModulesStale()
+      patchUiState({ busy: false, sid: null, status: '网关已退出' })
+      turnController.pushActivity('网关已退出 · 用 /logs 查看', 'error')
+      sys('错误：网关已退出')
     }
 
     gw.on('event', handler)
@@ -816,7 +818,7 @@ export function useMainApp(gw: GatewayClient) {
       respondWith('approval.respond', { choice, session_id: ui.sid }, () => {
         patchOverlayState({ approval: null })
         patchTurnState({ outcome: choice === 'deny' ? 'denied' : `approved (${choice})` })
-        patchUiState({ status: 'running…' })
+        patchUiState({ status: '运行中…' })
       }),
     [respondWith, ui.sid]
   )
@@ -829,7 +831,7 @@ export function useMainApp(gw: GatewayClient) {
 
       return respondWith('sudo.respond', { password: pw, request_id: overlay.sudo.requestId }, () => {
         patchOverlayState({ sudo: null })
-        patchUiState({ status: 'running…' })
+        patchUiState({ status: '运行中…' })
       })
     },
     [overlay.sudo, respondWith]
@@ -843,7 +845,7 @@ export function useMainApp(gw: GatewayClient) {
 
       return respondWith('secret.respond', { request_id: overlay.secret.requestId, value }, () => {
         patchOverlayState({ secret: null })
-        patchUiState({ status: 'running…' })
+        patchUiState({ status: '运行中…' })
       })
     },
     [overlay.secret, respondWith]
@@ -856,17 +858,17 @@ export function useMainApp(gw: GatewayClient) {
 
   const closeLiveSession = useCallback(
     async (id: string) => {
-      patchUiState({ status: 'closing session…' })
+      patchUiState({ status: '关闭会话中…' })
 
       try {
         const result = (await session.closeSession(id)) as null | SessionCloseResponse
-        patchUiState({ status: 'ready' })
+        patchUiState({ status: '就绪' })
 
         return result
       } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e)
-        sys(`error: ${message}`)
-        patchUiState({ status: 'ready' })
+        sys(`错误：${message}`)
+        patchUiState({ status: '就绪' })
 
         throw e
       }
@@ -1013,7 +1015,7 @@ export function useMainApp(gw: GatewayClient) {
       turnStartedAt: ui.sid ? turnStartedAt : null,
       // CLI parity: the classic prompt_toolkit status bar shows a red dot
       // on REC (cli.py:_get_voice_status_fragments line 2344).
-      voiceLabel: voiceRecording ? '● REC' : voiceProcessing ? '◉ STT' : `voice ${voiceEnabled ? 'on' : 'off'}${voiceTts ? ' [tts]' : ''}`
+      voiceLabel: voiceRecording ? '● 录音' : voiceProcessing ? '◉ 转写' : ''
     }),
     [
       cwd,

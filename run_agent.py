@@ -170,6 +170,7 @@ from agent.tool_dispatch_helpers import (
     _extract_error_preview,
     _trajectory_normalize_msg,  # noqa: F401  # re-exported for tests that `from run_agent import _trajectory_normalize_msg`
 )
+from agent.image_routing import _lookup_supports_vision
 from utils import atomic_json_write, base_url_host_matches, base_url_hostname
 
 
@@ -543,7 +544,7 @@ class AIAgent:
         )
         self._invalidate_system_prompt()
 
-    def reset_session_state(self):
+    def reset_session_state(self, previous_messages=None, old_session_id=None, carry_over_context=None):
         """Reset all session-scoped token counters to 0 for a fresh session.
         
         This method encapsulates the reset logic for all session-level metrics
@@ -3539,6 +3540,8 @@ class AIAgent:
         Custom/local models absent from models.dev would otherwise be
         misclassified as non-vision and have their images stripped.
         """
+        forced_image_mode: Optional[str] = None
+        cfg: dict[str, Any] = {}
         try:
             from hermes_cli.config import load_config
 
@@ -3548,8 +3551,6 @@ class AIAgent:
                 image_mode = str(agent_cfg.get("image_input_mode") or "").strip().lower()
                 if image_mode in {"native", "text"}:
                     forced_image_mode = image_mode
-                if forced_image_mode == "native":
-                    return True
                 if forced_image_mode == "text":
                     return False
         except Exception:
@@ -3574,9 +3575,17 @@ class AIAgent:
             from agent.models_dev import get_model_capabilities
             provider = (getattr(self, "provider", "") or "").strip()
             model = (getattr(self, "model", "") or "").strip()
-            return _lookup_supports_vision(provider, model, cfg) is True
+            supports = _lookup_supports_vision(provider, model, cfg)
+            if forced_image_mode == "native" and supports is not False:
+                return True
+            return supports is True
         except Exception:
-            return False
+            return forced_image_mode == "native"
+
+    def _provider_rejects_native_image_parts(self) -> bool:
+        # Kept as a single guard so future provider-specific native-image
+        # incompatibilities can be cached here without changing call sites.
+        return False
 
     def _preprocess_anthropic_content(self, content: Any, role: str) -> Any:
         if not self._content_has_image_parts(content):
@@ -3683,7 +3692,7 @@ class AIAgent:
         ):
             return api_messages
 
-        if self._model_supports_vision():
+        if self._model_supports_vision() and not self._provider_rejects_native_image_parts():
             return api_messages
 
         transformed = copy.deepcopy(api_messages)
@@ -3717,6 +3726,15 @@ class AIAgent:
             return content
 
         if self._model_supports_vision():
+            if self._provider_rejects_native_image_parts():
+                logger.debug(
+                    "Tool %s: model %s/%s uses text summary because the "
+                    "provider rejects native image/list content",
+                    tool_name,
+                    getattr(self, "provider", ""),
+                    getattr(self, "model", ""),
+                )
+                return _multimodal_text_summary(result)
             # Vision-capable on paper — but if we've already learned in this
             # session that the active (provider, model) rejects list-type
             # tool content (e.g. Xiaomi MiMo's 400 "text is not set"),

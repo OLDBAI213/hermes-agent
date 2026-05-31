@@ -329,6 +329,12 @@ class TestExtractMedia:
         assert media == [("/tmp/Jane Doe/speech.flac", False)]
         assert cleaned == ""
 
+    def test_windows_media_path_is_extracted(self):
+        content = r"MEDIA:E:\AI\hermes\image_cache\screen.png"
+        media, cleaned = BasePlatformAdapter.extract_media(content)
+        assert media == [(r"E:\AI\hermes\image_cache\screen.png", False)]
+        assert cleaned == ""
+
     def test_as_document_directive_stripped_from_cleaned_text(self):
         """[[as_document]] is a routing directive — strip it from
         user-visible text just like [[audio_as_voice]]. Callers detect the

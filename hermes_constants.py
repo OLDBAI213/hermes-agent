@@ -17,6 +17,14 @@ _HERMES_HOME_OVERRIDE: ContextVar[str | object] = ContextVar(
 )
 
 
+def _safe_home() -> Path:
+    """Return the OS home directory, or a local fallback when unavailable."""
+    try:
+        return Path.home()
+    except RuntimeError:
+        return Path.cwd()
+
+
 def set_hermes_home_override(path: str | Path | None) -> Token:
     """Set a context-local Hermes home override and return its reset token.
 
@@ -72,7 +80,7 @@ def get_hermes_home() -> Path:
             # Inline the default-root resolution from get_default_hermes_root()
             # to stay import-safe (this function is called from module scope
             # in 30+ files; we cannot afford to trigger logging setup here).
-            active_path = (Path.home() / ".hermes" / "active_profile")
+            active_path = (_safe_home() / ".hermes" / "active_profile")
             active = active_path.read_text().strip() if active_path.exists() else ""
         except (UnicodeDecodeError, OSError):
             active = ""
@@ -98,7 +106,7 @@ def get_hermes_home() -> Path:
             except Exception:
                 pass
 
-    return Path.home() / ".hermes"
+    return _safe_home() / ".hermes"
 
 
 def get_default_hermes_root() -> Path:
@@ -117,7 +125,7 @@ def get_default_hermes_root() -> Path:
 
     Import-safe — no dependencies beyond stdlib.
     """
-    native_home = Path.home() / ".hermes"
+    native_home = _safe_home() / ".hermes"
     env_home = os.environ.get("HERMES_HOME", "")
     if not env_home:
         return native_home

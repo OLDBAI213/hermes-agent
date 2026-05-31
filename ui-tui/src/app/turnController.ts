@@ -211,19 +211,19 @@ class TurnController {
     if (partial || tools.length) {
       appendMessage({
         role: 'assistant',
-        text: partial ? `${partial}\n\n*[interrupted]*` : '*[interrupted]*',
+        text: partial ? `${partial}\n\n*[已中断]*` : '*[已中断]*',
         ...(tools.length && { tools })
       })
     } else {
-      sys('interrupted')
+      sys('已中断')
     }
 
-    patchUiState({ status: 'interrupted' })
+    patchUiState({ status: '已中断' })
     this.clearStatusTimer()
 
     this.statusTimer = setTimeout(() => {
       this.statusTimer = null
-      patchUiState({ status: 'ready' })
+      patchUiState({ status: '就绪' })
     }, INTERRUPT_COOLDOWN_MS)
   }
 
@@ -650,7 +650,7 @@ class TurnController {
     const next = this.turnTools.filter(item => !sameToolTrailGroup(label, item))
 
     if (!this.activeTools.length) {
-      next.push('analyzing tool output…')
+      next.push('正在分析工具输出…')
     }
 
     this.turnTools = next.slice(-TRAIL_LIMIT)

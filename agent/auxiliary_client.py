@@ -4614,7 +4614,12 @@ def _convert_openai_images_to_anthropic(messages: list) -> list:
         changed = False
         for block in content:
             if block.get("type") == "image_url":
-                image_url_val = (block.get("image_url") or {}).get("url", "")
+                image_ref = block.get("image_url") or {}
+                image_url_val = (
+                    image_ref.get("url", "")
+                    if isinstance(image_ref, dict)
+                    else str(image_ref or "")
+                )
                 if image_url_val.startswith("data:"):
                     # Parse data URI: data:<media_type>;base64,<data>
                     header, _, b64data = image_url_val.partition(",")

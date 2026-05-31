@@ -934,6 +934,23 @@ def check_vision_requirements() -> bool:
     when the auto chain would have served the request (issue #31179).
     """
     try:
+        from agent.auxiliary_client import _read_main_model, _read_main_provider
+        from agent.image_routing import decide_image_input_mode
+        from hermes_cli.config import load_config
+
+        if (
+            decide_image_input_mode(
+                _read_main_provider(),
+                _read_main_model(),
+                load_config(),
+            )
+            == "native"
+        ):
+            return True
+    except Exception:
+        pass
+
+    try:
         from agent.auxiliary_client import resolve_vision_provider_client
     except ImportError:
         return False
@@ -1010,14 +1027,13 @@ from tools.registry import registry, tool_error
 VISION_ANALYZE_SCHEMA = {
     "name": "vision_analyze",
     "description": (
-        "Load an image into the conversation so you can see it. Accepts a "
-        "URL, local file path, or data URL. When your active model has "
-        "native vision, the image is attached to your context directly "
-        "and you read the pixels yourself on the next turn — call this "
-        "any time the user references an image (filepath in their message, "
-        "URL in tool output, screenshot from the browser, etc.). For "
-        "non-vision models, falls back to an auxiliary vision model that "
-        "returns a text description."
+        "Analyze an image only when the image is not already attached to "
+        "your current context and cannot be read by the active model "
+        "natively. Accepts a URL, local file path, or data URL. If the "
+        "user's image is already visible in the conversation, answer "
+        "directly with your built-in vision instead of calling this tool. "
+        "For text-only models, this tool may use an auxiliary vision model "
+        "and return a text description."
     ),
     "parameters": {
         "type": "object",

@@ -132,6 +132,134 @@ def test_dispatch_rejects_non_object_params():
     }
 
 
+def test_tui_extension_version_rpc_reports_protocol():
+    resp = server.handle_request(
+        {"id": "1", "method": "tui.extension.version", "params": {}}
+    )
+
+    assert resp["result"] == {
+        "name": "hermes-tui-extension-core",
+        "version": "0.2.0",
+        "protocol": 1,
+        "slots": [
+            "intro.summary",
+            "intro.detail",
+            "status.left",
+            "status.right",
+            "transcript.live_tail",
+            "overlay.panel",
+        ],
+        "states": [
+            "disabled",
+            "loading",
+            "ok",
+            "warning",
+            "stale",
+            "error",
+            "incompatible",
+        ],
+        "events": ["tui.module.update"],
+    }
+
+
+def test_tui_module_update_emits_scoped_snapshot(monkeypatch):
+    emitted: list[tuple[str, str, dict]] = []
+    server._sessions["sid"] = _session()
+    monkeypatch.setattr(server, "_emit", lambda *args: emitted.append(args))
+
+    try:
+        resp = server.handle_request(
+            {
+                "id": "1",
+                "method": "tui.module.update",
+                "params": {
+                    "session_id": "sid",
+                    "snapshot": {
+                        "id": "news_panel",
+                        "state": "warning",
+                        "summary": "3 条更新",
+                    },
+                },
+            }
+        )
+
+        assert resp["result"] == {
+            "ok": True,
+            "event": "tui.module.update",
+            "id": "news_panel",
+            "session_id": "sid",
+        }
+        assert emitted == [
+            (
+                "tui.module.update",
+                "sid",
+                {"id": "news_panel", "state": "warning", "summary": "3 条更新"},
+            )
+        ]
+    finally:
+        server._sessions.pop("sid", None)
+
+
+def test_tui_module_update_accepts_top_level_snapshot_fields(monkeypatch):
+    emitted: list[tuple[str, str, dict]] = []
+    server._sessions["sid"] = _session()
+    monkeypatch.setattr(server, "_emit", lambda *args: emitted.append(args))
+
+    try:
+        resp = server.handle_request(
+            {
+                "id": "1",
+                "method": "tui.module.update",
+                "params": {
+                    "session_id": "sid",
+                    "id": "stock_panel",
+                    "state": "ok",
+                    "summary": "AAPL +1%",
+                },
+            }
+        )
+
+        assert resp["result"]["ok"] is True
+        assert emitted == [
+            (
+                "tui.module.update",
+                "sid",
+                {"id": "stock_panel", "state": "ok", "summary": "AAPL +1%"},
+            )
+        ]
+    finally:
+        server._sessions.pop("sid", None)
+
+
+def test_tui_module_update_rejects_missing_session_id():
+    resp = server.handle_request(
+        {
+            "id": "1",
+            "method": "tui.module.update",
+            "params": {"id": "news_panel", "state": "ok"},
+        }
+    )
+
+    assert resp["error"]["message"] == "session_id required"
+
+
+def test_tui_module_update_rejects_unknown_state():
+    server._sessions["sid"] = _session()
+
+    try:
+        resp = server.handle_request(
+            {
+                "id": "1",
+                "method": "tui.module.update",
+                "params": {"session_id": "sid", "id": "news_panel", "state": "blink"},
+            }
+        )
+
+        assert resp["error"]["message"] == "unknown tui module state"
+    finally:
+        server._sessions.pop("sid", None)
+
+
 def test_voice_toggle_returns_configured_record_key(monkeypatch):
     monkeypatch.setattr(
         server,
@@ -1655,6 +1783,14 @@ def test_complete_slash_includes_tui_mouse_command():
     assert any(item["text"] == "/mouse" for item in resp["result"]["items"])
 
 
+def test_complete_slash_includes_tui_module_smoke_command():
+    resp = server.handle_request(
+        {"id": "1", "method": "complete.slash", "params": {"text": "/tui-m"}}
+    )
+
+    assert any(item["text"] == "/tui-module-smoke" for item in resp["result"]["items"])
+
+
 def test_complete_slash_details_args():
     resp_root = server.handle_request(
         {"id": "0", "method": "complete.slash", "params": {"text": "/details"}}
@@ -2070,6 +2206,50 @@ def test_config_set_personality_preserves_history_and_returns_info(monkeypatch):
     assert ("session.info", "sid", {"model": "?"}) in emits
 
 
+def test_refresh_mcp_tools_refreshes_ready_sessions(monkeypatch):
+    calls: list[str] = []
+    emits = []
+
+    class _Agent:
+        model = "x"
+
+        def refresh_tools(self):
+            calls.append("refresh")
+
+    agent = _Agent()
+    ready = threading.Event()
+    ready.set()
+    server._sessions["sid"] = _session(agent=agent, agent_ready=ready)
+    monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "x"})
+    monkeypatch.setattr(server, "_emit", lambda *args: emits.append(args))
+
+    try:
+        assert server.refresh_mcp_tools_for_sessions(timeout=0.01) == 1
+        assert calls == ["refresh"]
+        assert ("session.info", "sid", {"model": "x"}) in emits
+    finally:
+        server._sessions.pop("sid", None)
+
+
+def test_refresh_mcp_tools_waits_for_agent_readiness(monkeypatch):
+    calls: list[str] = []
+
+    class _Agent:
+        def refresh_tools(self):
+            calls.append("refresh")
+
+    agent = _Agent()
+    ready = threading.Event()
+    server._sessions["sid"] = _session(agent=agent, agent_ready=ready)
+    monkeypatch.setattr(server, "_emit", lambda *args: None)
+
+    try:
+        assert server.refresh_mcp_tools_for_sessions(timeout=0.01) == 0
+        assert calls == []
+    finally:
+        server._sessions.pop("sid", None)
+
+
 def test_session_compress_uses_compress_helper(monkeypatch):
     agent = types.SimpleNamespace()
     server._sessions["sid"] = _session(agent=agent)
@@ -2257,6 +2437,48 @@ def test_image_attach_appends_local_image(monkeypatch):
     assert len(server._sessions["sid"]["attached_images"]) == 1
 
 
+def test_tui_native_image_parts_use_xiaomi_nested_shape(tmp_path):
+    from agent.image_routing import build_native_content_parts
+
+    img = tmp_path / "shot.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
+
+    parts, skipped = build_native_content_parts("看图", [str(img)], provider="xiaomi")
+
+    assert skipped == []
+    assert parts[1]["type"] == "image_url"
+    assert isinstance(parts[1]["image_url"], dict)
+    assert parts[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_tui_does_not_force_text_mode_for_openai():
+    assert not server._tui_provider_requires_text_image_mode("openai", "gpt-4o")
+
+
+def test_tui_does_not_force_text_mode_for_xiaomi_mimo():
+    assert not server._tui_provider_requires_text_image_mode("xiaomi", "mimo-v2.5")
+
+
+def test_enrich_with_attached_images_uses_chinese_fallback(tmp_path, monkeypatch):
+    image_path = tmp_path / "shot.png"
+    image_path.write_bytes(b"not-real-image-but-path-exists")
+
+    async def fake_vision_analyze_tool(*, image_url, user_prompt):
+        assert "Describe everything visible" not in user_prompt
+        return json.dumps({"success": False}, ensure_ascii=False)
+
+    fake_tools = types.ModuleType("tools.vision_tools")
+    fake_tools.vision_analyze_tool = fake_vision_analyze_tool
+    monkeypatch.setitem(sys.modules, "tools.vision_tools", fake_tools)
+
+    enriched = server._enrich_with_attached_images("请看这个", [str(image_path)])
+
+    assert "用户附加了一张图片" in enriched
+    assert "自动识别失败" in enriched
+    assert "The user attached" not in enriched
+    assert "What do you see" not in enriched
+
+
 def test_image_attach_accepts_unquoted_screenshot_path_with_spaces(monkeypatch):
     screenshot = Path("/tmp/Screenshot 2026-04-21 at 1.04.43 PM.png")
     fake_cli = types.ModuleType("cli")
@@ -2338,6 +2560,19 @@ def test_commands_catalog_includes_tui_mouse_command():
     assert "/mouse" in tui_pairs
 
 
+def test_commands_catalog_includes_tui_module_smoke_command():
+    resp = server.handle_request(
+        {"id": "1", "method": "commands.catalog", "params": {}}
+    )
+
+    pairs = dict(resp["result"]["pairs"])
+    tui_cat = next(c for c in resp["result"]["categories"] if c["name"] == "TUI")
+    tui_pairs = dict(tui_cat["pairs"])
+
+    assert "/tui-module-smoke" in pairs
+    assert "/tui-module-smoke" in tui_pairs
+
+
 def test_commands_catalog_filters_gateway_only_commands_and_keeps_status_visible():
     resp = server.handle_request(
         {"id": "1", "method": "commands.catalog", "params": {}}
@@ -2389,12 +2624,12 @@ def test_session_status_reads_live_gateway_agent(monkeypatch):
         server._sessions.pop("sid", None)
 
     out = resp["result"]["output"]
-    assert "Hermes TUI Status" in out
-    assert "Session ID: session-key" in out
-    assert "Title: Live TUI" in out
-    assert "Model: live-model (live-provider)" in out
-    assert "Tokens: 1,234" in out
-    assert "Agent Running: Yes" in out
+    assert "Hermes TUI 状态" in out
+    assert "会话 ID: session-key" in out
+    assert "标题: Live TUI" in out
+    assert "模型: live-model (live-provider)" in out
+    assert "Token: 1,234" in out
+    assert "Agent 运行中: 是" in out
 
 
 def test_skills_reload_runs_in_gateway_process(monkeypatch):

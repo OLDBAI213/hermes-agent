@@ -73,7 +73,7 @@ export function applyVoiceRecordResponse(
 
   if (response?.status === 'busy') {
     voice.setProcessing(true)
-    sys('voice: still transcribing; try again shortly')
+    sys('语音仍在转写，请稍后再试')
   } else {
     voice.setProcessing(false)
   }
@@ -134,13 +134,13 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     if (overlay.sudo) {
       return gateway
         .rpc<SudoRespondResponse>('sudo.respond', { password: '', request_id: overlay.sudo.requestId })
-        .then(r => r && (patchOverlayState({ sudo: null }), actions.sys('sudo cancelled')))
+        .then(r => r && (patchOverlayState({ sudo: null }), actions.sys('sudo 已取消')))
     }
 
     if (overlay.secret) {
       return gateway
         .rpc<SecretRespondResponse>('secret.respond', { request_id: overlay.secret.requestId, value: '' })
-        .then(r => r && (patchOverlayState({ secret: null }), actions.sys('secret entry cancelled')))
+        .then(r => r && (patchOverlayState({ secret: null }), actions.sys('密钥输入已取消')))
     }
 
     if (overlay.modelPicker) {
@@ -223,7 +223,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
   // createGatewayEventHandler turns into UI badges and composer injection.
   const voiceRecordToggle = () => {
     if (!voice.enabled) {
-      return actions.sys('voice: mode is off — enable with /voice on')
+      return actions.sys('语音模式未开启，可用 /voice on 启用')
     }
 
     const starting = !voice.recording
@@ -248,7 +248,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
           voice.setRecording(false)
         }
 
-        actions.sys(`voice error: ${e.message}`)
+        actions.sys(`语音错误：${e.message}`)
       })
   }
 
@@ -520,29 +520,29 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // arrives as meta+g across platforms).
     if (ch.toLowerCase() === 'g' && (isAction(key, ch, 'g') || key.meta)) {
       return void cActions.openEditor().catch((err: unknown) => {
-        actions.sys(err instanceof Error ? `failed to open editor: ${err.message}` : 'failed to open editor')
+        actions.sys(err instanceof Error ? `打开编辑器失败：${err.message}` : '打开编辑器失败')
       })
     }
 
     // shift-tab flips yolo without spending a turn (claude-code parity)
     if (key.shift && key.tab && !cState.completions.length) {
       if (!live.sid) {
-        return void actions.sys('yolo needs an active session')
+        return void actions.sys('yolo 需要活动会话')
       }
 
       // gateway.rpc swallows errors with its own sys() message and resolves to null,
       // so we only speak when it came back with a real shape. null = rpc already spoke.
       return void gateway.rpc<ConfigSetResponse>('config.set', { key: 'yolo', session_id: live.sid }).then(r => {
         if (r?.value === '1') {
-          return actions.sys('yolo on')
+          return actions.sys('yolo 已开启')
         }
 
         if (r?.value === '0') {
-          return actions.sys('yolo off')
+          return actions.sys('yolo 已关闭')
         }
 
         if (r) {
-          actions.sys('failed to toggle yolo')
+          actions.sys('切换 yolo 失败')
         }
       })
     }

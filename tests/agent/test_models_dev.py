@@ -407,6 +407,38 @@ class TestGetModelCapabilities:
         assert caps is not None
         assert caps.supports_vision is False
 
+    def test_xiaomi_mimo_v25_is_forced_vision_capable(self):
+        registry = {
+            "xiaomi": {"id": "xiaomi", "models": {
+                "mimo-v2.5": {
+                    "id": "mimo-v2.5",
+                    "modalities": {"input": ["text"]},
+                    "attachment": False,
+                    "tool_call": True,
+                },
+            }},
+        }
+        with patch("agent.models_dev.fetch_models_dev", return_value=registry):
+            caps = get_model_capabilities("xiaomi", "mimo-v2.5")
+        assert caps is not None
+        assert caps.supports_vision is True
+
+    def test_xiaomi_mimo_v2_omni_is_forced_vision_capable(self):
+        registry = {
+            "xiaomi": {"id": "xiaomi", "models": {
+                "mimo-v2-omni": {
+                    "id": "mimo-v2-omni",
+                    "modalities": {"input": ["text"]},
+                    "attachment": False,
+                    "tool_call": True,
+                },
+            }},
+        }
+        with patch("agent.models_dev.fetch_models_dev", return_value=registry):
+            caps = get_model_capabilities("xiaomi", "mimo-v2-omni")
+        assert caps is not None
+        assert caps.supports_vision is True
+
     def test_model_not_found_returns_none(self):
         """Unknown model should return None."""
         with patch("agent.models_dev.fetch_models_dev", return_value=CAPS_REGISTRY):

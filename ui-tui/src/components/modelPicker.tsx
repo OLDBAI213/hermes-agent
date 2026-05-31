@@ -111,7 +111,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
             const r = asRpcResult<{ provider?: ModelOptionProvider }>(raw)
 
             if (!r?.provider) {
-              setKeyError('failed to save key')
+              setKeyError('保存密钥失败')
               setKeySaving(false)
 
               return
@@ -179,7 +179,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
                         authenticated: false,
                         models: [],
                         total_models: 0,
-                        warning: p.key_env ? `paste ${p.key_env} to activate` : 'run `hermes model` to configure'
+                        warning: p.key_env ? `粘贴 ${p.key_env} 后启用` : '运行 `hermes model` 配置'
                       }
                     : p
                 )
@@ -274,7 +274,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   })
 
   if (loading) {
-    return <Text color={t.color.muted}>loading models…</Text>
+    return <Text color={t.color.muted}>正在加载模型…</Text>
   }
 
   if (err) {
@@ -289,8 +289,8 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   if (!providers.length) {
     return (
       <Box flexDirection="column">
-        <Text color={t.color.muted}>no providers available</Text>
-        <OverlayHint t={t}>Esc/q cancel</OverlayHint>
+        <Text color={t.color.muted}>没有可用提供商</Text>
+        <OverlayHint t={t}>Esc/q 取消</OverlayHint>
       </Box>
     )
   }
@@ -302,11 +302,11 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
     return (
       <Box flexDirection="column" width={width}>
         <Text bold color={t.color.accent} wrap="truncate-end">
-          Configure {provider.name}
+          配置 {provider.name}
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
-          Paste your API key below (saved to ~/.hermes/.env)
+          在下方粘贴 API key（会保存到 ~/.hermes/.env）
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
@@ -329,11 +329,11 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
 
         {keyError ? (
           <Text color={t.color.label} wrap="truncate-end">
-            error: {keyError}
+            错误：{keyError}
           </Text>
         ) : keySaving ? (
           <Text color={t.color.muted} wrap="truncate-end">
-            saving…
+            保存中…
           </Text>
         ) : (
           <Text color={t.color.muted} wrap="truncate-end">
@@ -341,7 +341,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
           </Text>
         )}
 
-        <OverlayHint t={t}>Enter save · Ctrl+U clear · Esc back</OverlayHint>
+        <OverlayHint t={t}>Enter 保存 · Ctrl+U 清空 · Esc 返回</OverlayHint>
       </Box>
     )
   }
@@ -351,7 +351,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
     return (
       <Box flexDirection="column" width={width}>
         <Text bold color={t.color.accent} wrap="truncate-end">
-          Disconnect {provider.name}?
+          断开 {provider.name}？
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
@@ -359,11 +359,11 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
-          This removes saved credentials for {provider.name}.
+          这会删除 {provider.name} 已保存的凭据。
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
-          You can re-authenticate later by selecting it again.
+          之后重新选择它即可再次认证。
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
@@ -372,10 +372,10 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
 
         {keySaving ? (
           <Text color={t.color.muted} wrap="truncate-end">
-            disconnecting…
+            断开中…
           </Text>
         ) : (
-          <OverlayHint t={t}>y/Enter confirm · n/Esc cancel</OverlayHint>
+          <OverlayHint t={t}>y/Enter 确认 · n/Esc 取消</OverlayHint>
         )}
       </Box>
     )
@@ -387,7 +387,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
       const authMark = p.authenticated === false ? '○' : p.is_current ? '*' : '●'
       const modelCount = p.total_models ?? p.models?.length ?? 0
       const suffix =
-        p.authenticated === false ? (p.auth_type === 'api_key' ? '(no key)' : '(needs setup)') : `${modelCount} models`
+        p.authenticated === false ? (p.auth_type === 'api_key' ? '(缺少 key)' : '(需要设置)') : `${modelCount} 个模型`
 
       return `${authMark} ${names[i]} · ${suffix}`
     })
@@ -397,21 +397,21 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
     return (
       <Box flexDirection="column" width={width}>
         <Text bold color={t.color.accent} wrap="truncate-end">
-          Select provider (step 1/2)
+          选择提供商（第 1/2 步）
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
-          Full model IDs on the next step · Enter to continue
+          下一步显示完整模型 ID · Enter 继续
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
-          Current: {currentModel || '(unknown)'}
+          当前：{currentModel || '(未知)'}
         </Text>
         <Text color={t.color.label} wrap="truncate-end">
-          {provider?.warning ? `warning: ${provider.warning}` : ' '}
+          {provider?.warning ? `警告：${provider.warning}` : ' '}
         </Text>
         <Text color={t.color.muted} wrap="truncate-end">
-          {offset > 0 ? ` ↑ ${offset} more` : ' '}
+          {offset > 0 ? ` ↑ 还有 ${offset} 个` : ' '}
         </Text>
 
         {Array.from({ length: VISIBLE }, (_, i) => {
@@ -439,14 +439,14 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
         })}
 
         <Text color={t.color.muted} wrap="truncate-end">
-          {offset + VISIBLE < rows.length ? ` ↓ ${rows.length - offset - VISIBLE} more` : ' '}
+          {offset + VISIBLE < rows.length ? ` ↓ 还有 ${rows.length - offset - VISIBLE} 个` : ' '}
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
-          persist: {allowPersistGlobal ? (persistGlobal ? 'global' : 'session') : 'session'}
-          {allowPersistGlobal ? ' · g toggle' : ' only'}
+          保存范围：{allowPersistGlobal ? (persistGlobal ? '全局' : '当前会话') : '当前会话'}
+          {allowPersistGlobal ? ' · g 切换' : ' 仅此会话'}
         </Text>
-        <OverlayHint t={t}>↑/↓ select · Enter choose · d disconnect · Esc/q cancel</OverlayHint>
+        <OverlayHint t={t}>↑/↓ 选择 · Enter 确认 · d 断开 · Esc/q 取消</OverlayHint>
       </Box>
     )
   }
@@ -457,17 +457,17 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   return (
     <Box flexDirection="column" width={width}>
       <Text bold color={t.color.accent} wrap="truncate-end">
-        Select model (step 2/2)
+        选择模型（第 2/2 步）
       </Text>
 
       <Text color={t.color.muted} wrap="truncate-end">
-        {names[providerIdx] || '(unknown provider)'} · Esc back
+        {names[providerIdx] || '(未知提供商)'} · Esc 返回
       </Text>
       <Text color={t.color.label} wrap="truncate-end">
-        {provider?.warning ? `warning: ${provider.warning}` : ' '}
+        {provider?.warning ? `警告：${provider.warning}` : ' '}
       </Text>
       <Text color={t.color.muted} wrap="truncate-end">
-        {offset > 0 ? ` ↑ ${offset} more` : ' '}
+        {offset > 0 ? ` ↑ 还有 ${offset} 个` : ' '}
       </Text>
 
       {Array.from({ length: VISIBLE }, (_, i) => {
@@ -477,7 +477,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
         if (!row) {
           return !models.length && i === 0 ? (
             <Text color={t.color.muted} key="empty" wrap="truncate-end">
-              no models listed for this provider
+              这个提供商没有列出模型
             </Text>
           ) : (
             <Text color={t.color.muted} key={`pad-${i}`} wrap="truncate-end">
@@ -503,15 +503,15 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
       })}
 
       <Text color={t.color.muted} wrap="truncate-end">
-        {offset + VISIBLE < models.length ? ` ↓ ${models.length - offset - VISIBLE} more` : ' '}
+        {offset + VISIBLE < models.length ? ` ↓ 还有 ${models.length - offset - VISIBLE} 个` : ' '}
       </Text>
 
       <Text color={t.color.muted} wrap="truncate-end">
-        persist: {allowPersistGlobal ? (persistGlobal ? 'global' : 'session') : 'session'}
-        {allowPersistGlobal ? ' · g toggle' : ' only'}
+        保存范围：{allowPersistGlobal ? (persistGlobal ? '全局' : '当前会话') : '当前会话'}
+        {allowPersistGlobal ? ' · g 切换' : ' 仅此会话'}
       </Text>
       <OverlayHint t={t}>
-        {models.length ? '↑/↓ select · Enter switch · Esc back · q close' : 'Enter/Esc back · q close'}
+        {models.length ? '↑/↓ 选择 · Enter 切换 · Esc 返回 · q 关闭' : 'Enter/Esc 返回 · q 关闭'}
       </OverlayHint>
     </Box>
   )

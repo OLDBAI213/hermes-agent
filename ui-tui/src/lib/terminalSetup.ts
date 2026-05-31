@@ -294,7 +294,7 @@ export async function configureTerminalKeybindings(
   if (isRemoteShellSession(env)) {
     return {
       success: false,
-      message: `${meta.label} terminal setup must be run on the local machine, not inside an SSH session.`
+      message: `${meta.label} 终端快捷键设置必须在本机运行，不能在 SSH 会话内运行。`
     }
   }
 
@@ -303,7 +303,7 @@ export async function configureTerminalKeybindings(
   if (!configDir) {
     return {
       success: false,
-      message: `Could not determine ${meta.label} settings path on this platform.`
+      message: `无法在当前平台确定 ${meta.label} 设置路径。`
     }
   }
 
@@ -323,7 +323,7 @@ export async function configureTerminalKeybindings(
       if (!Array.isArray(parsed)) {
         return {
           success: false,
-          message: `${meta.label} keybindings.json is not a JSON array: ${keybindingsFile}`
+          message: `${meta.label} keybindings.json 不是 JSON 数组：${keybindingsFile}`
         }
       }
 
@@ -334,7 +334,7 @@ export async function configureTerminalKeybindings(
       if (code !== 'ENOENT') {
         return {
           success: false,
-          message: `Failed to read ${meta.label} keybindings: ${error}`
+          message: `读取 ${meta.label} 快捷键失败：${error}`
         }
       }
     }
@@ -349,7 +349,7 @@ export async function configureTerminalKeybindings(
       return {
         success: false,
         message:
-          `Existing terminal keybindings would conflict in ${keybindingsFile}: ` + conflicts.map(c => c.key).join(', ')
+          `现有终端快捷键会与 ${keybindingsFile} 冲突：` + conflicts.map(c => c.key).join(', ')
       }
     }
 
@@ -367,7 +367,7 @@ export async function configureTerminalKeybindings(
     if (!added) {
       return {
         success: true,
-        message: `${meta.label} terminal keybindings already configured.`
+        message: `${meta.label} 终端快捷键已配置。`
       }
     }
 
@@ -380,12 +380,12 @@ export async function configureTerminalKeybindings(
     return {
       success: true,
       requiresRestart: true,
-      message: `Added ${added} ${meta.label} terminal keybinding${added === 1 ? '' : 's'} in ${keybindingsFile}`
+      message: `已在 ${keybindingsFile} 添加 ${added} 个 ${meta.label} 终端快捷键`
     }
   } catch (error) {
     return {
       success: false,
-      message: `Failed to configure ${meta.label} terminal shortcuts: ${error}`
+      message: `配置 ${meta.label} 终端快捷键失败：${error}`
     }
   }
 }
@@ -401,7 +401,7 @@ export async function configureDetectedTerminalKeybindings(options?: {
   if (!detected) {
     return {
       success: false,
-      message: 'No supported IDE terminal detected. Supported: VS Code, Cursor, Windsurf.'
+      message: '没有检测到支持的 IDE 终端。支持：VS Code、Cursor、Windsurf。'
     }
   }
 

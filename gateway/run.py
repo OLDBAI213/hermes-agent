@@ -2600,23 +2600,22 @@ def _normalize_empty_agent_response(
         ) or ("400" in error_str and history_len > 50)
         if is_context_failure:
             return (
-                "⚠️ Session too large for the model's context window.\n"
-                "Use /compact to compress the conversation, or "
-                "/reset to start fresh."
+                "⚠️ 会话超出模型上下文窗口限制。
+"
+                "使用 /compact 压缩对话，或使用 /reset 开始新会话。"
             )
         return (
             f"The request failed: {str(error_detail)[:300]}\n"
-            "Try again or use /reset to start a fresh session."
+            "请重试或使用 /reset 开始新会话。"
         )
 
     api_calls = int(agent_result.get("api_calls", 0) or 0)
     if api_calls > 0 and not agent_result.get("interrupted"):
         if agent_result.get("partial"):
             err = agent_result.get("error", "processing incomplete")
-            return f"⚠️ Processing stopped: {str(err)[:200]}. Try again."
+            return f"⚠️ 处理已停止: {str(err)[:200]}。请重试。"
         return (
-            "⚠️ Processing completed but no response was generated. "
-            "This may be a transient error — try sending your message again."
+            "⚠️ 处理完成但未生成响应。这可能是临时错误，请重新发送消息。"
         )
 
     return response
@@ -4403,12 +4402,11 @@ class GatewayRunner:
         """
         active = self._snapshot_running_agents()
 
-        action = "restarting" if self._restart_requested else "shutting down"
+        action = "正在重启" if self._restart_requested else "正在关闭"
         hint = (
-            "Your current task will be interrupted. "
-            "Send any message after restart and I'll try to resume where you left off."
+            "当前任务将被中断。重启后发送任意消息，我会尝试继续之前的工作。"
             if self._restart_requested
-            else "Your current task will be interrupted."
+            else "当前任务将被中断。"
         )
         msg = f"⚠️ Gateway {action} — {hint}"
 
@@ -9894,7 +9892,7 @@ class GatewayRunner:
             # looks like a bug; a short explanation is more helpful.
             if response == "(empty)":
                 response = (
-                    "⚠️ The model returned no response after processing tool "
+                    "⚠️ 模型处理工具调用后未返回响应 "
                     "results. This can happen with some models — try again or "
                     "rephrase your question."
                 )
@@ -10220,7 +10218,9 @@ class GatewayRunner:
                         _foot_adapter = self.adapters.get(source.platform)
                         if _foot_adapter:
                             # For Feishu, send footer as interactive card instead of plain text
+                            logger.info("[DEBUG] footer platform=%s adapter=%s", source.platform, type(_foot_adapter).__name__)
                             if source.platform == "feishu":
+                                logger.info("[DEBUG] sending footer as interactive card")
                                 from gateway.platforms.feishu import _build_runtime_footer_card_payload
                                 _card_payload = _build_runtime_footer_card_payload(_footer_line)
                                 await _foot_adapter._feishu_send_with_retry(
@@ -10229,6 +10229,7 @@ class GatewayRunner:
                                     payload=_card_payload,
                                     reply_to=None, metadata=None,
                                 )
+                                logger.info("[DEBUG] interactive card sent")
                             else:
                                 await _foot_adapter.send(
                                     source.chat_id,
@@ -10288,9 +10289,9 @@ class GatewayRunner:
                 # for the API to process — treat it the same way.
                 if _hist_len > 50:
                     return (
-                        "⚠️ Session too large for the model's context window.\n"
-                        "Use /compact to compress the conversation, or "
-                        "/reset to start fresh."
+                        "⚠️ 会话超出模型上下文窗口限制。
+"
+                        "使用 /compact 压缩对话，或使用 /reset 开始新会话。"
                     )
                 elif status_code == 400:
                     status_hint = " The request was rejected by the API."
@@ -10298,7 +10299,7 @@ class GatewayRunner:
                 f"Sorry, I encountered an error ({error_type}).\n"
                 f"{error_detail}\n"
                 f"{status_hint}"
-                "Try again or use /reset to start a fresh session."
+                "请重试或使用 /reset 开始新会话。"
             )
         finally:
             # Restore session context variables to their pre-handler state
@@ -18938,7 +18939,7 @@ class GatewayRunner:
                 _diag_lines.append(
                     "To increase the limit, set agent.gateway_timeout in config.yaml "
                     "(value in seconds, 0 = no limit) and restart the gateway.\n"
-                    "Try again, or use /reset to start fresh."
+                    "请重试，或使用 /reset 开始新会话。"
                 )
 
                 response = {

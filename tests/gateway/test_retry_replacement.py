@@ -98,3 +98,39 @@ async def test_gateway_retry_replays_original_text_not_retry_command(tmp_path):
     )
 
     assert captured["text"] == "real message"
+
+
+@pytest.mark.asyncio
+async def test_gateway_retry_rejects_media_history_without_rewriting(tmp_path):
+    config = MagicMock()
+    config.sessions_dir = tmp_path
+    config.max_context_messages = 20
+    gw = GatewayRunner.__new__(GatewayRunner)
+    gw.config = config
+    gw.session_store = MagicMock()
+
+    session_entry = MagicMock(session_id="test-session")
+    session_entry.last_prompt_tokens = 55
+    gw.session_store.get_or_create_session.return_value = session_entry
+    gw.session_store.load_transcript.return_value = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "看看这张图"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+            ],
+        },
+        {"role": "assistant", "content": "answer"},
+    ]
+    gw.session_store.rewrite_transcript = MagicMock()
+    gw._handle_message = AsyncMock()
+
+    result = await gw._handle_retry_command(
+        MessageEvent(text="/retry", message_type=MessageType.TEXT, source=MagicMock())
+    )
+
+    assert "/retry" in result
+    assert "图片" in result
+    gw.session_store.rewrite_transcript.assert_not_called()
+    gw._handle_message.assert_not_called()
+    assert session_entry.last_prompt_tokens == 55

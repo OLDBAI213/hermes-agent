@@ -1082,31 +1082,31 @@ def check_voice_requirements() -> Dict[str, Any]:
     details_parts = []
 
     if termux_capture:
-        details_parts.append("Audio capture: OK (Termux:API microphone)")
+        details_parts.append("音频采集：正常（Termux:API 麦克风）")
     elif has_audio:
-        details_parts.append("Audio capture: OK")
+        details_parts.append("音频采集：正常")
     else:
-        details_parts.append(f"Audio capture: MISSING ({_voice_capture_install_hint()})")
+        details_parts.append(f"音频采集：缺失（{_voice_capture_install_hint()}）")
 
     if not stt_enabled:
-        details_parts.append("STT provider: DISABLED in config (stt.enabled: false)")
+        details_parts.append("STT 提供方：已在配置中关闭（stt.enabled: false）")
     elif stt_provider == "local":
-        details_parts.append("STT provider: OK (local faster-whisper)")
+        details_parts.append("STT 提供方：正常（本地 faster-whisper）")
     elif stt_provider == "groq":
-        details_parts.append("STT provider: OK (Groq)")
+        details_parts.append("STT 提供方：正常（Groq）")
     elif stt_provider == "openai":
-        details_parts.append("STT provider: OK (OpenAI)")
+        details_parts.append("STT 提供方：正常（OpenAI）")
     else:
         details_parts.append(
-            "STT provider: MISSING (uv pip install faster-whisper — "
-            "`pip install faster-whisper` also works if pip is on PATH, "
-            "or set GROQ_API_KEY / VOICE_TOOLS_OPENAI_KEY)"
+            "STT 提供方：缺失（uv pip install faster-whisper；"
+            "如果 pip 在 PATH 中也可用 pip install faster-whisper；"
+            "或设置 GROQ_API_KEY / VOICE_TOOLS_OPENAI_KEY）"
         )
 
     for warning in env_check["warnings"]:
-        details_parts.append(f"Environment: {warning}")
+        details_parts.append(f"环境：{_voice_environment_detail_zh(warning)}")
     for notice in env_check.get("notices", []):
-        details_parts.append(f"Environment: {notice}")
+        details_parts.append(f"环境：{_voice_environment_detail_zh(notice)}")
 
     return {
         "available": available,
@@ -1116,6 +1116,38 @@ def check_voice_requirements() -> Dict[str, Any]:
         "details": "\n".join(details_parts),
         "environment": env_check,
     }
+
+
+def _voice_environment_detail_zh(message: str) -> str:
+    text = str(message)
+    replacements = {
+        "Running over SSH -- no audio devices available": "正在通过 SSH 运行，无法使用本机音频设备",
+        "Running inside container (Docker/Podman/LXC) with host audio forwarding": "正在容器中运行，已配置宿主机音频转发",
+        "Running in WSL with PulseAudio bridge": "正在 WSL 中运行，已配置 PulseAudio 桥接",
+        "No PortAudio devices detected but host audio forwarding is configured -- continuing": "未检测到 PortAudio 设备，但已配置宿主机音频转发，继续运行",
+        "No PortAudio devices detected, but Termux:API microphone capture is available": "未检测到 PortAudio 设备，但可使用 Termux:API 麦克风采集",
+        "No audio input/output devices detected": "未检测到音频输入/输出设备",
+        "Audio device query failed but host audio forwarding is configured -- continuing": "音频设备查询失败，但已配置宿主机音频转发，继续运行",
+        "PortAudio device query failed, but Termux:API microphone capture is available": "PortAudio 设备查询失败，但可使用 Termux:API 麦克风采集",
+        "Audio subsystem error (PortAudio cannot query devices)": "音频子系统错误（PortAudio 无法查询设备）",
+        "Termux:API microphone recording available (sounddevice not required)": "可使用 Termux:API 麦克风录音（不需要 sounddevice）",
+        "Termux:API microphone recording available (PortAudio not required)": "可使用 Termux:API 麦克风录音（不需要 PortAudio）",
+    }
+    if text in replacements:
+        return replacements[text]
+    if text.startswith("Audio libraries not installed"):
+        return text.replace("Audio libraries not installed", "未安装音频库", 1)
+    if text.startswith("Termux:API Android app is not installed."):
+        return "未安装 Termux:API Android 应用，请安装或更新后再使用 termux-microphone-record。"
+    if text.startswith("PortAudio system library not found"):
+        return text.replace("PortAudio system library not found -- install it first", "未找到 PortAudio 系统库，请先安装", 1).replace(
+            "Then retry /voice on.", "然后重试 /voice on。"
+        )
+    if text.startswith("Running inside container"):
+        return text.replace("Running inside container (Docker/Podman/LXC) -- no audio devices.", "正在容器中运行，未发现音频设备。", 1)
+    if text.startswith("Running in WSL"):
+        return text.replace("Running in WSL -- audio requires PulseAudio bridge.", "正在 WSL 中运行，音频需要 PulseAudio 桥接。", 1)
+    return text
 
 
 # ============================================================================

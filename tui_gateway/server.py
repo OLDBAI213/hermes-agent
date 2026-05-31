@@ -134,6 +134,26 @@ except (ValueError, TypeError):
 _SLASH_WORKER_TIMEOUT_S = max(5.0, _slash_timeout)
 _DETAIL_SECTION_NAMES = ("thinking", "tools", "subagents", "activity")
 _DETAIL_MODES = frozenset({"hidden", "collapsed", "expanded"})
+_TUI_EXTENSION_NAME = "hermes-tui-extension-core"
+_TUI_EXTENSION_VERSION = "0.2.0"
+_TUI_EXTENSION_PROTOCOL_VERSION = 1
+_TUI_SLOT_IDS: tuple[str, ...] = (
+    "intro.summary",
+    "intro.detail",
+    "status.left",
+    "status.right",
+    "transcript.live_tail",
+    "overlay.panel",
+)
+_TUI_MODULE_STATES: tuple[str, ...] = (
+    "disabled",
+    "loading",
+    "ok",
+    "warning",
+    "stale",
+    "error",
+    "incompatible",
+)
 
 # ── Async RPC dispatch (#12546) ──────────────────────────────────────
 # A handful of handlers block the dispatcher loop in entry.py for seconds
@@ -523,6 +543,35 @@ def _wait_agent(session: dict, rid: str, timeout: float = 30.0) -> dict | None:
     return _err(rid, 5032, err) if err else None
 
 
+def refresh_mcp_tools_for_sessions(timeout: float = 30.0) -> int:
+    """Refresh tools for live TUI agents after background MCP discovery.
+
+    The discovery thread can complete while lazy TUI sessions are still
+    building.  Wait for each session's agent readiness gate before touching the
+    agent so the refreshed MCP surface is applied to real live sessions instead
+    of racing the lazy startup path.
+    """
+    refreshed = 0
+    for sid, session in list(_sessions.items()):
+        ready = session.get("agent_ready")
+        if ready is not None and not ready.wait(timeout=timeout):
+            logger.warning("skipping MCP refresh for %s: agent not ready", sid)
+            continue
+        if session.get("agent_error"):
+            logger.warning("skipping MCP refresh for %s: %s", sid, session.get("agent_error"))
+            continue
+        agent = session.get("agent")
+        if agent is None or not hasattr(agent, "refresh_tools"):
+            continue
+        try:
+            agent.refresh_tools()
+            _emit("session.info", sid, _session_info(agent))
+            refreshed += 1
+        except Exception as exc:
+            logger.warning("MCP tool refresh failed for %s: %s", sid, exc)
+    return refreshed
+
+
 def _start_agent_build(sid: str, session: dict) -> None:
     """Start building the real AIAgent for a TUI session, once.
 
@@ -617,6 +666,19 @@ def _start_agent_build(sid: str, session: dict) -> None:
     threading.Thread(target=_build, daemon=True).start()
 
 
+def _schedule_agent_build(sid: str, delay: float = 0.05) -> None:
+    """Schedule lazy AIAgent construction after the current response is flushed."""
+
+    def _deferred_build() -> None:
+        session = _sessions.get(sid)
+        if session is not None:
+            _start_agent_build(sid, session)
+
+    build_timer = threading.Timer(delay, _deferred_build)
+    build_timer.daemon = True
+    build_timer.start()
+
+
 def _sess_nowait(params, rid):
     s = _sessions.get(params.get("session_id") or "")
     return (s, None) if s else (None, _err(rid, 4001, "session not found"))
@@ -628,6 +690,63 @@ def _sess(params, rid):
         return (None, err)
     _start_agent_build(params.get("session_id") or "", s)
     return (s, _wait_agent(s, rid))
+
+
+@method("tui.extension.version")
+def _(rid, params: dict) -> dict:
+    return _ok(
+        rid,
+        {
+            "name": _TUI_EXTENSION_NAME,
+            "version": _TUI_EXTENSION_VERSION,
+            "protocol": _TUI_EXTENSION_PROTOCOL_VERSION,
+            "slots": list(_TUI_SLOT_IDS),
+            "states": list(_TUI_MODULE_STATES),
+            "events": ["tui.module.update"],
+        },
+    )
+
+
+@method("tui.module.update")
+def _(rid, params: dict) -> dict:
+    sid = str(params.get("session_id") or "").strip()
+    if not sid:
+        return _err(rid, 4006, "session_id required")
+    if sid not in _sessions:
+        return _err(rid, 4001, "session not found")
+
+    raw_snapshot = params.get("snapshot")
+    if raw_snapshot is None:
+        raw_snapshot = {
+            key: value
+            for key, value in params.items()
+            if key not in {"session_id", "snapshot"}
+        }
+    if not isinstance(raw_snapshot, dict):
+        return _err(rid, 4006, "snapshot must be an object")
+
+    snapshot = dict(raw_snapshot)
+    module_id = str(snapshot.get("id") or "").strip()
+    if not module_id:
+        return _err(rid, 4006, "id required")
+
+    state = str(snapshot.get("state") or "ok").strip().lower()
+    if state not in _TUI_MODULE_STATES:
+        return _err(rid, 4006, "unknown tui module state")
+
+    snapshot["id"] = module_id
+    snapshot["state"] = state
+    _emit("tui.module.update", sid, snapshot)
+
+    return _ok(
+        rid,
+        {
+            "ok": True,
+            "event": "tui.module.update",
+            "id": module_id,
+            "session_id": sid,
+        },
+    )
 
 
 def _normalize_completion_path(path_part: str) -> str:
@@ -1394,23 +1513,35 @@ def _probe_config_health(cfg: dict) -> str:
     else:
         keys = ", ".join(f"`{k}`" for k in null_keys)
         warnings.append(
-            f"config.yaml has empty section(s): {keys}. "
-            f"Remove the line(s) or set them to `{{}}` — "
-            f"empty sections silently drop nested settings."
+            f"config.yaml 存在空配置段：{keys}。"
+            f"请删除这些空行，或把它们设为 `{{}}`，否则子配置会被静默跳过。"
         )
     display_cfg = cfg.get("display")
     agent_cfg = cfg.get("agent")
     if isinstance(display_cfg, dict):
+        if not bool(display_cfg.get("show_reasoning", False)):
+            warnings.append(
+                "TUI 思考显示当前关闭；运行 `/reasoning show` 可打开。"
+                "否则思考面板会被隐藏。"
+            )
+        sections = display_cfg.get("sections")
+        if isinstance(sections, dict):
+            if str(sections.get("thinking", "")).strip().lower() == "hidden":
+                warnings.append("思考面板会被隐藏。")
+            if str(sections.get("tools", "")).strip().lower() == "hidden":
+                warnings.append("工具调用面板会被隐藏。")
         personality = str(display_cfg.get("personality", "") or "").strip().lower()
         if (
             personality
             and personality not in {"default", "none", "neutral"}
-            and isinstance(agent_cfg, dict)
-            and agent_cfg.get("personalities") is None
+            and (
+                not isinstance(agent_cfg, dict)
+                or agent_cfg.get("personalities") is None
+            )
         ):
             warnings.append(
-                "`display.personality` is set but `agent.personalities` is empty/null; "
-                "personality overlay will be skipped."
+                "`display.personality` 已设置，但 `agent.personalities` 为空；"
+                "人格叠加会被跳过。"
             )
     return " ".join(warnings).strip()
 
@@ -1448,6 +1579,10 @@ def _session_info(agent) -> dict:
         "usage": _get_usage(agent),
         "profile_name": _current_profile_name(),
     }
+    info["show_reasoning"] = _load_show_reasoning()
+    cfg_warn = _probe_config_health(_load_cfg())
+    if cfg_warn:
+        info["config_warning"] = cfg_warn
     try:
         from hermes_cli import __version__, __release_date__
 
@@ -2115,6 +2250,41 @@ def _init_session(sid: str, key: str, agent, history: list, cols: int = 80):
     _emit("session.info", sid, _session_info(agent))
 
 
+def _init_lazy_session(
+    sid: str,
+    key: str,
+    history: list,
+    cols: int = 80,
+    *,
+    display_history: list | None = None,
+) -> None:
+    now = time.time()
+    _sessions[sid] = {
+        "agent": None,
+        "agent_error": None,
+        "agent_ready": threading.Event(),
+        "attached_images": [],
+        "cols": cols,
+        "created_at": now,
+        "display_history": display_history,
+        "edit_snapshots": {},
+        "history": history,
+        "history_lock": threading.Lock(),
+        "history_version": 0,
+        "image_counter": 0,
+        "inflight_turn": None,
+        "last_active": now,
+        "pending_title": None,
+        "running": False,
+        "session_key": key,
+        "show_reasoning": _load_show_reasoning(),
+        "slash_worker": None,
+        "tool_progress_mode": _load_tool_progress_mode(),
+        "tool_started_at": {},
+        "transport": current_transport() or _stdio_transport,
+    }
+
+
 def _new_session_key() -> str:
     return f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
@@ -2140,9 +2310,8 @@ def _enrich_with_attached_images(user_text: str, image_paths: list[str]) -> str:
     from tools.vision_tools import vision_analyze_tool
 
     prompt = (
-        "Describe everything visible in this image in thorough detail. "
-        "Include any text, code, data, objects, people, layout, colors, "
-        "and any other notable visual information."
+        "请用中文详细描述这张图片里能看到的所有内容。"
+        "包括文字、代码、数据、对象、人物、布局、颜色，以及其他重要视觉信息。"
     )
 
     parts: list[str] = []
@@ -2150,25 +2319,30 @@ def _enrich_with_attached_images(user_text: str, image_paths: list[str]) -> str:
         p = Path(path)
         if not p.exists():
             continue
-        hint = f"[You can examine it with vision_analyze using image_url: {p}]"
+        hint = f"[如需复核图片细节，可对这个本地路径执行视觉分析：{p}]"
         try:
             r = _json.loads(
                 asyncio.run(vision_analyze_tool(image_url=str(p), user_prompt=prompt))
             )
             desc = r.get("analysis", "") if r.get("success") else None
             parts.append(
-                f"[The user attached an image:\n{desc}]\n{hint}"
+                f"[用户附加了一张图片，已自动识别到以下内容：\n{desc}]\n{hint}"
                 if desc
-                else f"[The user attached an image but analysis failed.]\n{hint}"
+                else f"[用户附加了一张图片，但自动识别失败。]\n{hint}"
             )
         except Exception:
-            parts.append(f"[The user attached an image but analysis failed.]\n{hint}")
+            parts.append(f"[用户附加了一张图片，但自动识别失败。]\n{hint}")
 
     text = user_text or ""
     prefix = "\n\n".join(parts)
     if prefix:
         return f"{prefix}\n\n{text}" if text else prefix
-    return text or "What do you see in this image?"
+    return text or "请描述这张图片。"
+
+
+def _tui_provider_requires_text_image_mode(provider: str, model: str, base_url: str = "") -> bool:
+    """Backward-compatible hook for providers that must avoid native images."""
+    return False
 
 
 def _content_display_text(content: Any) -> str:
@@ -2329,14 +2503,7 @@ def _(rid, params: dict) -> dict:
     # + skeleton panel, then build the real AIAgent just after this response is
     # flushed.  This keeps startup responsive while still hydrating tools/skills
     # without requiring the user to submit a first prompt.
-    def _deferred_build() -> None:
-        session = _sessions.get(sid)
-        if session is not None:
-            _start_agent_build(sid, session)
-
-    build_timer = threading.Timer(0.05, _deferred_build)
-    build_timer.daemon = True
-    build_timer.start()
+    _schedule_agent_build(sid)
 
     return _ok(
         rid,
@@ -2468,12 +2635,14 @@ def _(rid, params: dict) -> dict:
             target, include_ancestors=True
         )
         messages = _history_to_messages(display_history)
-        tokens = _set_session_context(target)
-        try:
-            agent = _make_agent(sid, target, session_id=target)
-        finally:
-            _clear_session_context(tokens)
-        _init_session(sid, target, agent, history, cols=int(params.get("cols", 80)))
+        _init_lazy_session(
+            sid,
+            target,
+            history,
+            cols=int(params.get("cols", 80)),
+            display_history=display_history,
+        )
+        _schedule_agent_build(sid)
     except Exception as e:
         return _err(rid, 5000, f"resume failed: {e}")
     return _ok(
@@ -2483,7 +2652,7 @@ def _(rid, params: dict) -> dict:
             "resumed": target,
             "message_count": len(messages),
             "messages": messages,
-            "info": _session_info(agent),
+            "info": _fallback_session_info(_sessions[sid]),
         },
     )
 
@@ -2779,21 +2948,21 @@ def _(rid, params: dict) -> dict:
     provider = getattr(agent, "provider", None) or "unknown"
     model = getattr(agent, "model", None) or "(unknown)"
     lines = [
-        "Hermes TUI Status",
+        "Hermes TUI 状态",
         "",
-        f"Session ID: {key}",
-        f"Path: {display_hermes_home()}",
+        f"会话 ID: {key}",
+        f"路径: {display_hermes_home()}",
     ]
     title = (meta.get("title") or "").strip()
     if title:
-        lines.append(f"Title: {title}")
+        lines.append(f"标题: {title}")
     lines.extend(
         [
-            f"Model: {model} ({provider})",
-            f"Created: {created.strftime('%Y-%m-%d %H:%M')}",
-            f"Last Activity: {updated.strftime('%Y-%m-%d %H:%M')}",
-            f"Tokens: {int(usage.get('total') or 0):,}",
-            f"Agent Running: {'Yes' if session.get('running') else 'No'}",
+            f"模型: {model} ({provider})",
+            f"创建时间: {created.strftime('%Y-%m-%d %H:%M')}",
+            f"最近活动: {updated.strftime('%Y-%m-%d %H:%M')}",
+            f"Token: {int(usage.get('total') or 0):,}",
+            f"Agent 运行中: {'是' if session.get('running') else '否'}",
         ]
     )
     return _ok(rid, {"output": "\n".join(lines)})
@@ -3567,6 +3736,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                         _parts, _skipped = build_native_content_parts(
                             prompt,
                             images,
+                            provider=getattr(agent, "provider", "") or _read_main_provider(),
                         )
                         if _skipped:
                             print(
@@ -4748,7 +4918,85 @@ _TUI_EXTRA: list[tuple[str, str, str]] = [
         "TUI",
     ),
     ("/sessions", "Switch between live TUI sessions", "TUI"),
+    ("/tui-doctor", "Show TUI extension and module runtime state", "TUI"),
+    (
+        "/tui-module-smoke",
+        "Render or clear a local TUI module smoke snapshot",
+        "TUI",
+    ),
 ]
+
+_TUI_CATEGORY_ZH = {
+    "Session": "会话",
+    "Configuration": "配置",
+    "Tools & Skills": "工具与技能",
+    "Info": "信息",
+    "Exit": "退出",
+    "User commands": "用户命令",
+}
+
+_TUI_COMMAND_DESCRIPTION_ZH = {
+    "busy": "控制 Hermes 忙碌时 Enter 的处理方式",
+    "browser": "连接或查看 Chromium 系浏览器 CDP 工具",
+    "clear": "清屏并开始新会话",
+    "config": "显示当前配置",
+    "copy": "复制上一条助手回复到剪贴板",
+    "cron": "管理计划任务",
+    "help": "显示可用命令",
+    "compact": "切换紧凑显示模式",
+    "details": "控制详情面板显示",
+    "history": "显示对话历史",
+    "image": "为下一条提示附加本地图片",
+    "indicator": "选择 TUI 忙碌指示器样式",
+    "logs": "显示最近的 gateway 日志",
+    "mouse": "设置鼠标跟踪模式 [on|off|toggle|wheel|buttons|all]",
+    "paste": "附加剪贴板图片",
+    "platforms": "显示 gateway/消息平台状态",
+    "plugins": "列出已安装插件及状态",
+    "quit": "退出 TUI（可用 --delete 同时删除会话历史）",
+    "redraw": "强制重绘界面（修复终端漂移）",
+    "reload": "把 .env 变量重新加载到当前会话",
+    "save": "保存当前对话",
+    "sessions": "切换当前 TUI 会话",
+    "skills": "浏览、查看、安装或审计技能",
+    "skin": "显示或切换显示皮肤/主题",
+    "statusbar": "切换上下文/模型状态栏",
+    "tools": "管理工具：/tools [list|disable|enable] [name...]",
+    "toolsets": "列出可用工具集",
+    "tui-doctor": "查看 TUI 扩展和模块运行状态",
+    "tui-module-smoke": "渲染或清理本地 TUI 模块烟测",
+}
+
+_TUI_EXTRA_ZH = {
+    "/compact": "切换紧凑显示模式",
+    "/details": "控制详情面板显示",
+    "/logs": "显示最近的 gateway 日志",
+    "/mouse": "设置鼠标跟踪模式 [on|off|toggle|wheel|buttons|all]",
+    "/sessions": "切换当前 TUI 会话",
+    "/tui-doctor": "查看 TUI 扩展和模块运行状态",
+    "/tui-module-smoke": "渲染或清理本地 TUI 模块烟测",
+}
+
+
+def _tui_cmd_desc(cmd) -> str:
+    desc = _TUI_COMMAND_DESCRIPTION_ZH.get(getattr(cmd, "name", ""))
+    if desc is None:
+        try:
+            from gateway.run import _GATEWAY_COMMAND_DESCRIPTION_ZH
+
+            desc = _GATEWAY_COMMAND_DESCRIPTION_ZH.get(cmd.name)
+        except Exception:
+            desc = None
+    if desc is None:
+        desc = getattr(cmd, "description", "")
+    args_hint = getattr(cmd, "args_hint", "")
+    if args_hint:
+        return f"{desc}（用法：/{cmd.name} {args_hint}）"
+    return desc
+
+
+def _tui_category_name(category: str) -> str:
+    return _TUI_CATEGORY_ZH.get(category, category)
 
 # Commands that queue messages onto _pending_input in the CLI.
 # In the TUI the slash worker subprocess has no reader for that queue,
@@ -4774,7 +5022,6 @@ def _(rid, params: dict) -> dict:
         from hermes_cli.commands import (
             COMMAND_REGISTRY,
             SUBCOMMANDS,
-            _build_description,
         )
 
         all_pairs: list[list[str]] = []
@@ -4792,17 +5039,19 @@ def _(rid, params: dict) -> dict:
             for a in cmd.aliases:
                 canon[f"/{a}".lower()] = c
 
-            desc = _build_description(cmd)
+            desc = _tui_cmd_desc(cmd)
             all_pairs.append([c, desc])
 
-            cat = cmd.category
+            cat = _tui_category_name(cmd.category)
             if cat not in cat_map:
                 cat_map[cat] = []
                 cat_order.append(cat)
             cat_map[cat].append([c, desc])
 
         for name, desc, cat in _TUI_EXTRA:
+            desc = _TUI_EXTRA_ZH.get(name, desc)
             all_pairs.append([name, desc])
+            cat = _tui_category_name(cat)
             if cat not in cat_map:
                 cat_map[cat] = []
                 cat_order.append(cat)
@@ -4812,7 +5061,7 @@ def _(rid, params: dict) -> dict:
         try:
             qcmds = _load_cfg().get("quick_commands", {}) or {}
             if isinstance(qcmds, dict) and qcmds:
-                bucket = "User commands"
+                bucket = _tui_category_name("User commands")
                 if bucket not in cat_map:
                     cat_map[bucket] = []
                     cat_order.append(bucket)
@@ -4823,11 +5072,11 @@ def _(rid, params: dict) -> dict:
                     canon[key.lower()] = key
                     qtype = qc.get("type", "")
                     if qtype == "exec":
-                        default_desc = f"exec: {qc.get('command', '')}"
+                        default_desc = f"执行：{qc.get('command', '')}"
                     elif qtype == "alias":
-                        default_desc = f"alias → {qc.get('target', '')}"
+                        default_desc = f"别名 → {qc.get('target', '')}"
                     else:
-                        default_desc = qtype or "quick command"
+                        default_desc = f"快捷命令：{qtype}" if qtype else "快捷命令"
                     qdesc = str(qc.get("description") or default_desc)
                     qdesc = qdesc[:120] + ("…" if len(qdesc) > 120 else "")
                     all_pairs.append([key, qdesc])
@@ -5488,7 +5737,24 @@ def _(rid, params: dict) -> dict:
 
 
 def _details_completion_item(value: str, meta: str = "") -> dict:
-    return {"text": value, "display": value, "meta": meta}
+    return {"text": value, "display": value, "meta": _localize_tui_completion_meta(value, meta)}
+
+
+def _localize_tui_completion_meta(text: str, meta: str) -> str:
+    command = str(text or "").strip().lstrip("/").split(" ", 1)[0].lower()
+    if command in _TUI_COMMAND_DESCRIPTION_ZH:
+        return _TUI_COMMAND_DESCRIPTION_ZH[command]
+    if meta == "global mode":
+        return "全局显示模式"
+    if meta == "cycle global mode":
+        return "循环全局显示模式"
+    if meta == "section override":
+        return "单独设置分区显示"
+    if meta.startswith("set "):
+        return "单独设置分区显示"
+    if meta.startswith("clear ") and meta.endswith(" override"):
+        return "清除分区显示覆盖"
+    return meta
 
 
 def _details_root_completion_item(
@@ -5606,7 +5872,10 @@ def _(rid, params: dict) -> dict:
                 # is a string, and sending the raw list trips Ink's row
                 # layout into 1-char truncation of the next column.
                 "display": to_plain_text(c.display) if c.display else c.text,
-                "meta": to_plain_text(c.display_meta) if c.display_meta else "",
+                "meta": _localize_tui_completion_meta(
+                    c.text,
+                    to_plain_text(c.display_meta) if c.display_meta else "",
+                ),
             }
             for c in completer.get_completions(doc, None)
         ][:30]
@@ -5615,22 +5884,32 @@ def _(rid, params: dict) -> dict:
             {
                 "text": "/compact",
                 "display": "/compact",
-                "meta": "Toggle compact display mode",
+                "meta": _TUI_EXTRA_ZH["/compact"],
             },
             {
                 "text": "/details",
                 "display": "/details",
-                "meta": "Control agent detail visibility",
+                "meta": _TUI_EXTRA_ZH["/details"],
             },
             {
                 "text": "/logs",
                 "display": "/logs",
-                "meta": "Show recent gateway log lines",
+                "meta": _TUI_EXTRA_ZH["/logs"],
             },
             {
                 "text": "/mouse",
                 "display": "/mouse",
-                "meta": "Set mouse tracking preset [on|off|toggle|wheel|buttons|all]",
+                "meta": _TUI_EXTRA_ZH["/mouse"],
+            },
+            {
+                "text": "/tui-doctor",
+                "display": "/tui-doctor",
+                "meta": _TUI_EXTRA_ZH["/tui-doctor"],
+            },
+            {
+                "text": "/tui-module-smoke",
+                "display": "/tui-module-smoke",
+                "meta": _TUI_EXTRA_ZH["/tui-module-smoke"],
             },
         ]
         for extra in extras:

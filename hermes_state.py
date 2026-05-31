@@ -397,6 +397,13 @@ class SessionDB:
             self._conn.row_factory = sqlite3.Row
             apply_wal_with_fallback(self._conn, db_label="state.db")
             self._conn.execute("PRAGMA foreign_keys=ON")
+            
+            # Set restrictive file permissions (owner read/write only)
+            import os
+            try:
+                os.chmod(str(self.db_path), 0o600)
+            except (OSError, AttributeError):
+                pass  # Windows or permission issues — best effort
 
             self._init_schema()
         except Exception as exc:

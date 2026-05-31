@@ -122,7 +122,7 @@ def _run_async_immediately(coro):
 def _make_config():
     telegram_cfg = SimpleNamespace(enabled=True, token="***", extra={})
     return SimpleNamespace(
-        platforms={Platform.TELEGRAM: telegram_cfg},
+        platforms={Platform.TELEGRAM: telegram_cfg, Platform.FEISHU: telegram_cfg},
         get_home_channel=lambda _platform: None,
     ), telegram_cfg
 
@@ -410,6 +410,38 @@ class TestSendMessageTool:
             "hello",
             thread_id=None,
             media_files=[],
+            force_document=False,
+        )
+
+    def test_windows_media_path_is_sent_as_attachment_not_text(self, tmp_path):
+        config, feishu_cfg = _make_config()
+        image = tmp_path / "screen.png"
+        image.write_bytes(b"\x89PNG")
+        windows_path = str(image)
+
+        with patch("gateway.config.load_gateway_config", return_value=config), \
+             patch("tools.interrupt.is_interrupted", return_value=False), \
+             patch("model_tools._run_async", side_effect=_run_async_immediately), \
+             patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock, \
+             patch("gateway.mirror.mirror_to_session", return_value=True):
+            result = json.loads(
+                send_message_tool(
+                    {
+                        "action": "send",
+                        "target": "feishu:oc_123",
+                        "message": f"hello\nMEDIA:{windows_path}",
+                    }
+                )
+            )
+
+        assert result["success"] is True
+        send_mock.assert_awaited_once_with(
+            Platform.FEISHU,
+            feishu_cfg,
+            "oc_123",
+            "hello",
+            thread_id=None,
+            media_files=[(windows_path, False)],
             force_document=False,
         )
 

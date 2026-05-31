@@ -985,7 +985,14 @@ def check_dangerous_command(command: str, env_type: str,
             "(pattern: %s): %s — set HERMES_INTERACTIVE or HERMES_GATEWAY_SESSION to require approval.",
             description, command[:200],
         )
-        return {"approved": True, "message": None}
+        # In non-interactive contexts, reject dangerous commands by default
+        # to prevent accidental execution. Users can override with HERMES_INTERACTIVE.
+        return {
+            "approved": False,
+            "message": f"BLOCKED: Dangerous command rejected in non-interactive context (matched '{description}' pattern). Set HERMES_INTERACTIVE=1 to approve.",
+            "pattern_key": pattern_key,
+            "description": description,
+        }
 
     if is_gateway or env_var_enabled("HERMES_EXEC_ASK"):
         submit_pending(session_key, {

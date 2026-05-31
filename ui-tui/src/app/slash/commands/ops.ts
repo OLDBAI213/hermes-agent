@@ -63,7 +63,7 @@ interface SkillsReloadResponse {
 
 export const opsCommands: SlashCommand[] = [
   {
-    help: 'stop background processes',
+    help: '停止后台进程',
     name: 'stop',
     run: (_arg, ctx) => {
       ctx.gateway
@@ -71,8 +71,7 @@ export const opsCommands: SlashCommand[] = [
         .then(
           ctx.guarded<ProcessStopResponse>(r => {
             const killed = Number(r.killed ?? 0)
-            const noun = killed === 1 ? 'process' : 'processes'
-            ctx.transcript.sys(`stopped ${killed} background ${noun}`)
+            ctx.transcript.sys(`已停止 ${killed} 个后台进程`)
           })
         )
         .catch(ctx.guardedErr)
@@ -81,7 +80,7 @@ export const opsCommands: SlashCommand[] = [
 
   {
     aliases: ['reload_mcp'],
-    help: 'reload MCP servers in the live session (warns about prompt cache invalidation)',
+    help: '重载当前会话的 MCP 服务（会提示 prompt cache 失效）',
     name: 'reload-mcp',
     run: (arg, ctx) => {
       // Parse arg: `now` / `always` skip the confirmation gate.
@@ -102,18 +101,18 @@ export const opsCommands: SlashCommand[] = [
         .then(
           ctx.guarded<ReloadMcpResponse>(r => {
             if (r.status === 'confirm_required') {
-              ctx.transcript.sys(r.message || '/reload-mcp requires confirmation')
+              ctx.transcript.sys(r.message || '/reload-mcp 需要确认')
               return
             }
             if (r.status === 'reloaded') {
               ctx.transcript.sys(
                 params.always
-                  ? 'MCP servers reloaded · future /reload-mcp will run without confirmation'
-                  : 'MCP servers reloaded'
+                  ? 'MCP 服务已重载，后续 /reload-mcp 将不再确认'
+                  : 'MCP 服务已重载'
               )
               return
             }
-            ctx.transcript.sys('reload complete')
+            ctx.transcript.sys('重载完成')
           })
         )
         .catch(ctx.guardedErr)
@@ -121,7 +120,7 @@ export const opsCommands: SlashCommand[] = [
   },
 
   {
-    help: 're-read ~/.hermes/.env into the running gateway (CLI parity)',
+    help: '把 ~/.hermes/.env 重新读入当前 gateway',
     name: 'reload',
     run: (_arg, ctx) => {
       ctx.gateway
@@ -129,9 +128,7 @@ export const opsCommands: SlashCommand[] = [
         .then(
           ctx.guarded<ReloadEnvResponse>(r => {
             const n = Number(r.updated ?? 0)
-            const noun = n === 1 ? 'var' : 'vars'
-
-            ctx.transcript.sys(`reloaded .env (${n} ${noun} updated)`)
+            ctx.transcript.sys(`已重载 .env（更新 ${n} 个变量）`)
           })
         )
         .catch(ctx.guardedErr)
@@ -139,7 +136,7 @@ export const opsCommands: SlashCommand[] = [
   },
 
   {
-    help: 'manage browser CDP connection [connect|disconnect|status]',
+    help: '管理浏览器 CDP 连接 [connect|disconnect|status]',
     name: 'browser',
     run: (arg, ctx) => {
       const [rawAction = 'status', ...rest] = arg.trim().split(/\s+/).filter(Boolean)
@@ -147,7 +144,7 @@ export const opsCommands: SlashCommand[] = [
 
       if (!['connect', 'disconnect', 'status'].includes(action)) {
         return ctx.transcript.sys(
-          'usage: /browser [connect|disconnect|status] [url] · persistent: set browser.cdp_url in config.yaml'
+          '用法: /browser [connect|disconnect|status] [url] · 持久配置可设置 config.yaml 的 browser.cdp_url'
         )
       }
 
@@ -155,7 +152,7 @@ export const opsCommands: SlashCommand[] = [
       const url = action === 'connect' ? rest.join(' ').trim() || 'http://127.0.0.1:9222' : undefined
 
       if (url) {
-        ctx.transcript.sys(`checking Chromium-family browser remote debugging at ${url}...`)
+        ctx.transcript.sys(`正在检查 Chromium 系浏览器远程调试：${url}...`)
       }
 
       ctx.gateway
@@ -171,19 +168,19 @@ export const opsCommands: SlashCommand[] = [
             if (action === 'status') {
               return ctx.transcript.sys(
                 r.connected
-                  ? `browser connected: ${r.url || '(url unavailable)'}`
-                  : 'browser not connected (try /browser connect <url> or set browser.cdp_url in config.yaml)'
+                  ? `浏览器已连接：${r.url || '（URL 不可用）'}`
+                  : '浏览器未连接（可尝试 /browser connect <url>，或在 config.yaml 设置 browser.cdp_url）'
               )
             }
 
             if (action === 'disconnect') {
-              return ctx.transcript.sys('browser disconnected')
+              return ctx.transcript.sys('浏览器已断开')
             }
 
             if (r.connected) {
-              ctx.transcript.sys('Browser connected to live Chromium-family browser via CDP')
-              ctx.transcript.sys(`Endpoint: ${r.url || '(url unavailable)'}`)
-              ctx.transcript.sys('next browser tool call will use this CDP endpoint')
+              ctx.transcript.sys('浏览器已通过 CDP 连接到当前 Chromium 系浏览器')
+              ctx.transcript.sys(`端点：${r.url || '（URL 不可用）'}`)
+              ctx.transcript.sys('下一次浏览器工具调用会使用这个 CDP 端点')
             }
           })
         )
@@ -192,11 +189,11 @@ export const opsCommands: SlashCommand[] = [
   },
 
   {
-    help: 'list, diff, or restore checkpoints',
+    help: '列出、比较或恢复检查点',
     name: 'rollback',
     run: (arg, ctx) => {
       if (!ctx.sid) {
-        return ctx.transcript.sys('no active session — nothing to rollback')
+        return ctx.transcript.sys('没有活动会话，无法回滚')
       }
 
       const trimmed = arg.trim()
@@ -209,16 +206,16 @@ export const opsCommands: SlashCommand[] = [
           .then(
             ctx.guarded<RollbackListResponse>(r => {
               if (!r.enabled) {
-                return ctx.transcript.sys('checkpoints are not enabled')
+                return ctx.transcript.sys('未启用回滚检查点')
               }
 
               const checkpoints = r.checkpoints ?? []
 
               if (!checkpoints.length) {
-                return ctx.transcript.sys('no checkpoints found')
+                return ctx.transcript.sys('没有找到回滚检查点')
               }
 
-              ctx.transcript.panel('Rollback checkpoints', [
+              ctx.transcript.panel('回滚检查点', [
                 {
                   rows: checkpoints.map((c, idx) => [
                     `${idx + 1}. ${c.hash.slice(0, 10)}`,
@@ -235,7 +232,7 @@ export const opsCommands: SlashCommand[] = [
         const hash = rest[0]
 
         if (!hash) {
-          return ctx.transcript.sys('usage: /rollback diff <checkpoint>')
+          return ctx.transcript.sys('用法: /rollback diff <checkpoint>')
         }
 
         return ctx.gateway
@@ -245,11 +242,11 @@ export const opsCommands: SlashCommand[] = [
               const body = (r.rendered || r.diff || '').trim()
 
               if (!body && !r.stat) {
-                return ctx.transcript.sys('no changes since this checkpoint')
+                return ctx.transcript.sys('此检查点之后没有变化')
               }
 
               const text = [r.stat || '', body].filter(Boolean).join('\n\n')
-              ctx.transcript.page(text, 'Rollback diff')
+              ctx.transcript.page(text, '回滚差异')
             })
           )
           .catch(ctx.guardedErr)
@@ -267,12 +264,12 @@ export const opsCommands: SlashCommand[] = [
         .then(
           ctx.guarded<RollbackRestoreResponse>(r => {
             if (!r.success) {
-              return ctx.transcript.sys(`rollback failed: ${r.error || r.message || 'unknown error'}`)
+              return ctx.transcript.sys(`回滚失败：${r.error || r.message || '未知错误'}`)
             }
 
-            const target = filePath || 'workspace'
-            const detail = r.reason || r.message || r.restored_to || 'restored'
-            ctx.transcript.sys(`rollback restored ${target}: ${detail}`)
+            const target = filePath || '工作区'
+            const detail = r.reason || r.message || r.restored_to || '已恢复'
+            ctx.transcript.sys(`已恢复 ${target}：${detail}`)
 
             if ((r.history_removed ?? 0) > 0) {
               ctx.transcript.setHistoryItems(prev => ctx.transcript.trimLastExchange(prev))
@@ -285,7 +282,7 @@ export const opsCommands: SlashCommand[] = [
 
   {
     aliases: ['tasks'],
-    help: 'open the spawn-tree dashboard (live audit + kill/pause controls)',
+    help: '打开子任务面板（审计、停止、暂停）',
     name: 'agents',
     run: (arg, ctx) => {
       const sub = arg.trim().toLowerCase()
@@ -299,7 +296,7 @@ export const opsCommands: SlashCommand[] = [
           .request<DelegationPauseResponse>('delegation.pause', { paused })
           .then(r => {
             applyDelegationStatus({ paused: r?.paused })
-            ctx.transcript.sys(`delegation · ${r?.paused ? 'paused' : 'resumed'}`)
+            ctx.transcript.sys(`委托 · ${r?.paused ? '已暂停' : '已恢复'}`)
           })
           .catch(ctx.guardedErr)
 
@@ -309,7 +306,7 @@ export const opsCommands: SlashCommand[] = [
       if (sub === 'status') {
         const d = getDelegationState()
         ctx.transcript.sys(
-          `delegation · ${d.paused ? 'paused' : 'active'} · caps d${d.maxSpawnDepth ?? '?'}/${d.maxConcurrentChildren ?? '?'}`
+          `委托 · ${d.paused ? '已暂停' : '运行中'} · 上限 d${d.maxSpawnDepth ?? '?'}/${d.maxConcurrentChildren ?? '?'}`
         )
 
         return
@@ -320,7 +317,7 @@ export const opsCommands: SlashCommand[] = [
   },
 
   {
-    help: 'replay a completed spawn tree · `/replay [N|last|list|load <path>]`',
+    help: '回放已完成的子任务树 · `/replay [N|last|list|load <path>]`',
     name: 'replay',
     run: (arg, ctx) => {
       const history = getSpawnHistory()
@@ -339,7 +336,7 @@ export const opsCommands: SlashCommand[] = [
               const entries = r.entries ?? []
 
               if (!entries.length) {
-                return ctx.transcript.sys('no archived spawn trees on disk for this session')
+                return ctx.transcript.sys('当前会话没有已归档的子任务树')
               }
 
               const rows: [string, string][] = entries.map(e => {
@@ -349,7 +346,7 @@ export const opsCommands: SlashCommand[] = [
                 return [`${ts} · ${e.count}×`, `${label}\n  ${e.path}`]
               })
 
-              ctx.transcript.panel('Archived spawn trees', [{ rows }])
+              ctx.transcript.panel('已归档子任务树', [{ rows }])
             })
           )
           .catch(ctx.guardedErr)
@@ -362,7 +359,7 @@ export const opsCommands: SlashCommand[] = [
         const path = raw.slice(5).trim()
 
         if (!path) {
-          return ctx.transcript.sys('usage: /replay load <path>')
+          return ctx.transcript.sys('用法: /replay load <path>')
         }
 
         ctx.gateway
@@ -370,7 +367,7 @@ export const opsCommands: SlashCommand[] = [
           .then(
             ctx.guarded<SpawnTreeLoadResponse>(r => {
               if (!r.subagents?.length) {
-                return ctx.transcript.sys('snapshot empty or unreadable')
+                return ctx.transcript.sys('快照为空或无法读取')
               }
 
               // Push onto the in-memory history so the overlay picks it up
@@ -386,7 +383,7 @@ export const opsCommands: SlashCommand[] = [
 
       // ── In-memory nav (same-session) ─────────────────────────────
       if (!history.length) {
-        return ctx.transcript.sys('no completed spawn trees this session · try /replay list')
+        return ctx.transcript.sys('当前会话没有已完成的子任务树，可试试 /replay list')
       }
 
       let index = 1
@@ -395,7 +392,7 @@ export const opsCommands: SlashCommand[] = [
         const parsed = parseInt(raw, 10)
 
         if (Number.isNaN(parsed) || parsed < 1 || parsed > history.length) {
-          return ctx.transcript.sys(`replay: index out of range 1..${history.length} · use /replay list for disk`)
+          return ctx.transcript.sys(`回放编号超出范围 1..${history.length}，磁盘记录请用 /replay list`)
         }
 
         index = parsed
@@ -406,13 +403,13 @@ export const opsCommands: SlashCommand[] = [
   },
 
   {
-    help: 'diff two completed spawn trees · `/replay-diff <baseline> <candidate>` (indexes from /replay list or history N)',
+    help: '比较两个已完成的子任务树 · `/replay-diff <baseline> <candidate>`',
     name: 'replay-diff',
     run: (arg, ctx) => {
       const parts = arg.trim().split(/\s+/).filter(Boolean)
 
       if (parts.length !== 2) {
-        return ctx.transcript.sys('usage: /replay-diff <a> <b>  (e.g. /replay-diff 1 2 for last two)')
+        return ctx.transcript.sys('用法: /replay-diff <a> <b>，例如 /replay-diff 1 2')
       }
 
       const [a, b] = parts
@@ -432,7 +429,7 @@ export const opsCommands: SlashCommand[] = [
       const candidate = resolve(b!)
 
       if (!baseline || !candidate) {
-        return ctx.transcript.sys(`replay-diff: could not resolve indices · history has ${history.length} entries`)
+        return ctx.transcript.sys(`无法解析回放编号，当前历史里有 ${history.length} 条记录`)
       }
 
       setDiffPair({ baseline, candidate })
@@ -442,14 +439,14 @@ export const opsCommands: SlashCommand[] = [
 
   {
     aliases: ['reload_skills'],
-    help: 're-scan installed skills in the live TUI gateway',
+    help: '重新扫描当前 TUI gateway 已安装技能',
     name: 'reload-skills',
     run: (_arg, ctx) => {
       ctx.gateway
         .rpc<SkillsReloadResponse>('skills.reload', {})
         .then(
           ctx.guarded<SkillsReloadResponse>(r => {
-            ctx.transcript.page(r.output || 'skills reloaded', 'Reload Skills')
+            ctx.transcript.page(r.output || '技能已重载', '重载技能')
             ctx.gateway
               .rpc<CommandsCatalogResponse>('commands.catalog', {})
               .then(
@@ -475,7 +472,7 @@ export const opsCommands: SlashCommand[] = [
   },
 
   {
-    help: 'browse, inspect, install skills',
+    help: '浏览、查看、安装技能',
     name: 'skills',
     run: (arg, ctx, cmd) => {
       const text = arg.trim()
@@ -496,8 +493,8 @@ export const opsCommands: SlashCommand[] = [
               return
             }
 
-            const body = r?.output || '/skills: no output'
-            const formatted = r?.warning ? `warning: ${r.warning}\n${body}` : body
+            const body = r?.output || '/skills：无输出'
+            const formatted = r?.warning ? `警告：${r.warning}\n${body}` : body
             const long = formatted.length > 180 || formatted.split('\n').filter(Boolean).length > 2
 
             long ? ctx.transcript.page(formatted, 'Skills') : ctx.transcript.sys(formatted)
@@ -512,7 +509,7 @@ export const opsCommands: SlashCommand[] = [
               const cats = Object.entries(r.skills ?? {}).sort()
 
               if (!cats.length) {
-                return sys('no skills available')
+                return sys('没有可用技能')
               }
 
               panel(
@@ -528,7 +525,7 @@ export const opsCommands: SlashCommand[] = [
 
       if (sub === 'inspect') {
         if (!query) {
-          return sys('usage: /skills inspect <name>')
+          return sys('用法: /skills inspect <name>')
         }
 
         rpc<SkillsInspectResponse>('skills.manage', { action: 'inspect', query })
@@ -537,13 +534,13 @@ export const opsCommands: SlashCommand[] = [
               const info = r.info ?? {}
 
               if (!info.name) {
-                return sys(`unknown skill: ${query}`)
+                return sys(`未知技能：${query}`)
               }
 
               const rows: [string, string][] = [
-                ['Name', String(info.name)],
-                ['Category', String(info.category ?? '')],
-                ['Path', String(info.path ?? '')]
+                ['名称', String(info.name)],
+                ['分类', String(info.category ?? '')],
+                ['路径', String(info.path ?? '')]
               ]
 
               const sections: PanelSection[] = [{ rows }]
@@ -552,7 +549,7 @@ export const opsCommands: SlashCommand[] = [
                 sections.push({ text: String(info.description) })
               }
 
-              panel('Skill', sections)
+              panel('技能', sections)
             })
           )
           .catch(ctx.guardedErr)
@@ -562,7 +559,7 @@ export const opsCommands: SlashCommand[] = [
 
       if (sub === 'search') {
         if (!query) {
-          return sys('usage: /skills search <query>')
+          return sys('用法: /skills search <query>')
         }
 
         rpc<SkillsSearchResponse>('skills.manage', { action: 'search', query })
@@ -571,10 +568,10 @@ export const opsCommands: SlashCommand[] = [
               const results = r.results ?? []
 
               if (!results.length) {
-                return sys(`no results for: ${query}`)
+                return sys(`没有搜索结果：${query}`)
               }
 
-              panel(`Search: ${query}`, [{ rows: results.map(s => [s.name, s.description ?? '']) }])
+              panel(`搜索：${query}`, [{ rows: results.map(s => [s.name, s.description ?? '']) }])
             })
           )
           .catch(ctx.guardedErr)
@@ -584,15 +581,15 @@ export const opsCommands: SlashCommand[] = [
 
       if (sub === 'install') {
         if (!query) {
-          return sys('usage: /skills install <name or url>')
+          return sys('用法: /skills install <name or url>')
         }
 
-        sys(`installing ${query}…`)
+        sys(`正在安装 ${query}…`)
 
         rpc<SkillsInstallResponse>('skills.manage', { action: 'install', query })
           .then(
             ctx.guarded<SkillsInstallResponse>(r =>
-              sys(r.installed ? `installed ${r.name ?? query}` : 'install failed')
+              sys(r.installed ? `已安装 ${r.name ?? query}` : '安装失败')
             )
           )
           .catch(ctx.guardedErr)
@@ -604,10 +601,10 @@ export const opsCommands: SlashCommand[] = [
         const pageNum = query ? parseInt(query, 10) : 1
 
         if (Number.isNaN(pageNum) || pageNum < 1) {
-          return sys('usage: /skills browse [page]  (page must be a positive number)')
+          return sys('用法: /skills browse [page]，page 必须是正数')
         }
 
-        sys('fetching community skills (scans 6 sources, may take ~15s)…')
+        sys('正在获取社区技能（扫描 6 个来源，可能需要约 15 秒）…')
 
         rpc<SkillsBrowseResponse>('skills.manage', { action: 'browse', page: pageNum })
           .then(
@@ -615,7 +612,7 @@ export const opsCommands: SlashCommand[] = [
               const items = r.items ?? []
 
               if (!items.length) {
-                return sys(`no skills on page ${pageNum}${r.total ? ` (total ${r.total})` : ''}`)
+                return sys(`第 ${pageNum} 页没有技能${r.total ? `（总数 ${r.total}）` : ''}`)
               }
 
               const rows: [string, string][] = items.map(s => [
@@ -626,18 +623,18 @@ export const opsCommands: SlashCommand[] = [
               const footer: string[] = []
 
               if (r.page && r.total_pages) {
-                footer.push(`page ${r.page} of ${r.total_pages}`)
+                footer.push(`第 ${r.page}/${r.total_pages} 页`)
               }
 
               if (r.total) {
-                footer.push(`${r.total} skills total`)
+                footer.push(`共 ${r.total} 个技能`)
               }
 
               if (r.page && r.total_pages && r.page < r.total_pages) {
-                footer.push(`/skills browse ${r.page + 1} for more`)
+                footer.push(`继续：/skills browse ${r.page + 1}`)
               }
 
-              panel(`Browse Skills${pageNum > 1 ? ` — p${pageNum}` : ''}`, [
+              panel(`浏览技能${pageNum > 1 ? ` — 第 ${pageNum} 页` : ''}`, [
                 { rows },
                 ...(footer.length ? [{ text: footer.join(' · ') }] : [])
               ])
@@ -653,7 +650,7 @@ export const opsCommands: SlashCommand[] = [
   },
 
   {
-    help: 'enable or disable tools (client-side history reset on change)',
+    help: '启用或禁用工具（会重置客户端历史）',
     name: 'tools',
     run: (arg, ctx, cmd) => {
       const [subcommand, ...names] = arg.trim().split(/\s+/).filter(Boolean)
@@ -666,8 +663,8 @@ export const opsCommands: SlashCommand[] = [
               return
             }
 
-            const body = r?.output || '/tools: no output'
-            const text = r?.warning ? `warning: ${r.warning}\n${body}` : body
+            const body = r?.output || '/tools：无输出'
+            const text = r?.warning ? `警告：${r.warning}\n${body}` : body
             const long = text.length > 180 || text.split('\n').filter(Boolean).length > 2
 
             long ? ctx.transcript.page(text, 'Tools') : ctx.transcript.sys(text)
@@ -678,9 +675,9 @@ export const opsCommands: SlashCommand[] = [
       }
 
       if (!names.length) {
-        ctx.transcript.sys(`usage: /tools ${subcommand} <name> [name ...]`)
-        ctx.transcript.sys(`built-in toolset: /tools ${subcommand} web`)
-        ctx.transcript.sys(`MCP tool: /tools ${subcommand} github:create_issue`)
+        ctx.transcript.sys(`用法: /tools ${subcommand} <name> [name ...]`)
+        ctx.transcript.sys(`内置工具集：/tools ${subcommand} web`)
+        ctx.transcript.sys(`MCP 工具：/tools ${subcommand} github:create_issue`)
 
         return
       }
@@ -695,19 +692,19 @@ export const opsCommands: SlashCommand[] = [
             }
 
             if (r.changed?.length) {
-              ctx.transcript.sys(`${subcommand === 'disable' ? 'disabled' : 'enabled'}: ${r.changed.join(', ')}`)
+              ctx.transcript.sys(`${subcommand === 'disable' ? '已禁用' : '已启用'}：${r.changed.join(', ')}`)
             }
 
             if (r.unknown?.length) {
-              ctx.transcript.sys(`unknown toolsets: ${r.unknown.join(', ')}`)
+              ctx.transcript.sys(`未知工具集：${r.unknown.join(', ')}`)
             }
 
             if (r.missing_servers?.length) {
-              ctx.transcript.sys(`missing MCP servers: ${r.missing_servers.join(', ')}`)
+              ctx.transcript.sys(`缺少 MCP 服务：${r.missing_servers.join(', ')}`)
             }
 
             if (r.reset) {
-              ctx.transcript.sys('session reset. new tool configuration is active.')
+              ctx.transcript.sys('会话已重置，新工具配置已生效。')
             }
           })
         )
