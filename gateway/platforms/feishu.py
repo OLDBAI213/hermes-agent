@@ -222,10 +222,10 @@ _APPROVAL_CHOICE_MAP: Dict[str, str] = {
     "deny": "deny",
 }
 _APPROVAL_LABEL_MAP: Dict[str, str] = {
-    "once": "Approved once",
-    "session": "Approved for session",
-    "always": "Approved permanently",
-    "deny": "Denied",
+    "once": "已批准一次",
+    "session": "本轮会话已批准",
+    "always": "已永久批准",
+    "deny": "已拒绝",
 }
 _FEISHU_BOT_MSG_TRACK_SIZE = 512                   # LRU size for tracking sent message IDs
 _FEISHU_REPLY_FALLBACK_CODES = frozenset({230011, 231003})  # reply target withdrawn/missing → create fallback
@@ -258,12 +258,12 @@ _ONBOARD_REQUEST_TIMEOUT_S = 10
 # Fallback display strings
 # ---------------------------------------------------------------------------
 
-FALLBACK_POST_TEXT = "[Rich text message]"
-FALLBACK_FORWARD_TEXT = "[Merged forward message]"
-FALLBACK_SHARE_CHAT_TEXT = "[Shared chat]"
-FALLBACK_INTERACTIVE_TEXT = "[Interactive message]"
+FALLBACK_POST_TEXT = "富文本消息"
+FALLBACK_FORWARD_TEXT = "合并转发消息"
+FALLBACK_SHARE_CHAT_TEXT = "共享会话"
+FALLBACK_INTERACTIVE_TEXT = "互动消息"
 FALLBACK_IMAGE_TEXT = "[Image]"
-FALLBACK_ATTACHMENT_TEXT = "[Attachment]"
+FALLBACK_ATTACHMENT_TEXT = "[附件]"
 # ---------------------------------------------------------------------------
 # Post/card parsing helpers
 # ---------------------------------------------------------------------------
@@ -750,7 +750,7 @@ def _render_post_element(
         return f"[Attachment: {file_name}]" if file_name else "[Attachment]"
     if tag in {"emotion", "emoji"}:
         label = str(element.get("text", "")).strip() or str(element.get("emoji_type", "")).strip()
-        return f":{_escape_markdown_text(label)}:" if label else "[Emoji]"
+        return f":{_escape_markdown_text(label)}:" if label else "[表情]"
     if tag == "br":
         return "\n"
     if tag in {"hr", "divider"}:
@@ -949,7 +949,7 @@ def _normalize_interactive_message(message_type: str, payload: Dict[str, Any]) -
         if line != title:
             lines.append(line)
     if actions:
-        lines.append(f"Actions: {', '.join(actions)}")
+        lines.append(f"操作：{', '.join(actions)}")
 
     text_content = "\n".join(lines[:12]).strip() or FALLBACK_INTERACTIVE_TEXT
     return FeishuNormalizedMessage(
@@ -1778,7 +1778,7 @@ class FeishuAdapter(BasePlatformAdapter):
     ) -> SendResult:
         """Send a Feishu message."""
         if not self._client:
-            return SendResult(success=False, error="Not connected")
+            return SendResult(success=False, error="未连接")
 
         formatted = self.format_message(content)
         chunks = self.truncate_message(formatted, self.MAX_MESSAGE_LENGTH)
@@ -1821,7 +1821,7 @@ class FeishuAdapter(BasePlatformAdapter):
                     )
                 last_response = response
 
-            return self._finalize_send_result(last_response, "send failed")
+            return self._finalize_send_result(last_response, "发送失败")
         except Exception as exc:
             logger.error("[Feishu] Send error: %s", exc, exc_info=True)
             return SendResult(success=False, error=str(exc))
@@ -1836,7 +1836,7 @@ class FeishuAdapter(BasePlatformAdapter):
     ) -> SendResult:
         """Edit a previously sent Feishu text/post message."""
         if not self._client:
-            return SendResult(success=False, error="Not connected")
+            return SendResult(success=False, error="未连接")
 
         content = self.format_message(content)
         try:
@@ -1844,7 +1844,7 @@ class FeishuAdapter(BasePlatformAdapter):
             body = self._build_update_message_body(msg_type=msg_type, content=payload)
             request = self._build_update_message_request(message_id=message_id, request_body=body)
             response = await asyncio.to_thread(self._client.im.v1.message.update, request)
-            result = self._finalize_send_result(response, "update failed")
+            result = self._finalize_send_result(response, "更新消息失败")
             if not result.success and msg_type == "post" and _POST_CONTENT_INVALID_RE.search(result.error or ""):
                 logger.warning("[Feishu] Invalid post update payload rejected by API; falling back to plain text")
                 fallback_body = self._build_update_message_body(
@@ -1853,7 +1853,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 )
                 fallback_request = self._build_update_message_request(message_id=message_id, request_body=fallback_body)
                 fallback_response = await asyncio.to_thread(self._client.im.v1.message.update, fallback_request)
-                result = self._finalize_send_result(fallback_response, "update failed")
+                result = self._finalize_send_result(fallback_response, "更新消息失败")
             if result.success:
                 result.message_id = message_id
             return result
@@ -1863,7 +1863,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
     async def send_exec_approval(
         self, chat_id: str, command: str, session_key: str,
-        description: str = "dangerous command",
+        description: str = "需要确认的命令",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """Send an interactive card with approval buttons.
@@ -1873,7 +1873,7 @@ class FeishuAdapter(BasePlatformAdapter):
         ``resolve_gateway_approval()`` to unblock the waiting agent thread.
         """
         if not self._client:
-            return SendResult(success=False, error="Not connected")
+            return SendResult(success=False, error="未连接")
 
         try:
             approval_id = next(self._approval_counter)
@@ -1890,21 +1890,21 @@ class FeishuAdapter(BasePlatformAdapter):
             card = {
                 "config": {"wide_screen_mode": True},
                 "header": {
-                    "title": {"content": "⚠️ Command Approval Required", "tag": "plain_text"},
+                    "title": {"content": "⚠️ 需要确认命令", "tag": "plain_text"},
                     "template": "orange",
                 },
                 "elements": [
                     {
                         "tag": "markdown",
-                        "content": f"```\n{cmd_preview}\n```\n**Reason:** {description}",
+                        "content": f"```\n{cmd_preview}\n```\n**原因:** {description}",
                     },
                     {
                         "tag": "action",
                         "actions": [
-                            _btn("✅ Allow Once", "approve_once", "primary"),
-                            _btn("✅ Session", "approve_session"),
-                            _btn("✅ Always", "approve_always"),
-                            _btn("❌ Deny", "deny", "danger"),
+                            _btn("✅ 仅本次", "approve_once", "primary"),
+                            _btn("✅ 本轮会话", "approve_session"),
+                            _btn("✅ 永久允许", "approve_always"),
+                            _btn("❌ 拒绝", "deny", "danger"),
                         ],
                     },
                 ],
@@ -1933,7 +1933,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _build_update_prompt_card(*, prompt: str, default: str, prompt_id: int) -> Dict[str, Any]:
-        default_hint = f"\n\nDefault: `{default}`" if default else ""
+        default_hint = f"\n\n默认值: `{default}`" if default else ""
 
         def _btn(label: str, answer: str, btn_type: str) -> dict:
             return {
@@ -1949,7 +1949,7 @@ class FeishuAdapter(BasePlatformAdapter):
         return {
             "config": {"wide_screen_mode": True},
             "header": {
-                "title": {"content": "⚕ Update Needs Your Input", "tag": "plain_text"},
+                "title": {"content": "⚕ 更新需要你确认", "tag": "plain_text"},
                 "template": "orange",
             },
             "elements": [
@@ -1957,8 +1957,8 @@ class FeishuAdapter(BasePlatformAdapter):
                 {
                     "tag": "action",
                     "actions": [
-                        _btn("✓ Yes", "y", "primary"),
-                        _btn("✗ No", "n", "danger"),
+                        _btn("✓ 是", "y", "primary"),
+                        _btn("✗ 否", "n", "danger"),
                     ],
                 },
             ],
@@ -1971,7 +1971,7 @@ class FeishuAdapter(BasePlatformAdapter):
     ) -> SendResult:
         """Send an interactive update prompt with Yes/No buttons."""
         if not self._client:
-            return SendResult(success=False, error="Not connected")
+            return SendResult(success=False, error="未连接")
 
         try:
             prompt_id = next(self._update_prompt_counter)
@@ -2003,7 +2003,7 @@ class FeishuAdapter(BasePlatformAdapter):
     def _build_resolved_approval_card(*, choice: str, user_name: str) -> Dict[str, Any]:
         """Build raw card JSON for a resolved approval action."""
         icon = "❌" if choice == "deny" else "✅"
-        label = _APPROVAL_LABEL_MAP.get(choice, "Resolved")
+        label = _APPROVAL_LABEL_MAP.get(choice, "已处理")
         return {
             "config": {"wide_screen_mode": True},
             "header": {
@@ -2013,7 +2013,7 @@ class FeishuAdapter(BasePlatformAdapter):
             "elements": [
                 {
                     "tag": "markdown",
-                    "content": f"{icon} **{label}** by {user_name}",
+                    "content": f"{icon} **{label}**，操作者: {user_name}",
                 },
             ],
         }
@@ -2021,15 +2021,15 @@ class FeishuAdapter(BasePlatformAdapter):
     @staticmethod
     def _build_resolved_update_prompt_card(*, answer: str, user_name: str) -> Dict[str, Any]:
         yes = answer == "y"
-        label = "Yes" if yes else "No"
+        label = "是" if yes else "否"
         return {
             "config": {"wide_screen_mode": True},
             "header": {
-                "title": {"content": f"{'✅' if yes else '❌'} Update prompt answered: {label}", "tag": "plain_text"},
+                "title": {"content": f"{'✅' if yes else '❌'} 已回复更新确认: {label}", "tag": "plain_text"},
                 "template": "green" if yes else "red",
             },
             "elements": [
-                {"tag": "markdown", "content": f"Answered by **{user_name}**"},
+                {"tag": "markdown", "content": f"由 **{user_name}** 回复"},
             ],
         }
 
@@ -2109,9 +2109,9 @@ class FeishuAdapter(BasePlatformAdapter):
     ) -> SendResult:
         """Send a local image file to Feishu."""
         if not self._client:
-            return SendResult(success=False, error="Not connected")
+            return SendResult(success=False, error="未连接")
         if not os.path.exists(image_path):
-            return SendResult(success=False, error=f"Image file not found: {image_path}")
+            return SendResult(success=False, error=f"图片文件不存在: {image_path}")
 
         try:
             import io as _io
@@ -2130,8 +2130,8 @@ class FeishuAdapter(BasePlatformAdapter):
             if not image_key:
                 return self._response_error_result(
                     upload_response,
-                    default_message="image upload failed",
-                    override_error="Feishu image upload missing image_key",
+                    default_message="图片上传失败",
+                    override_error="飞书图片上传缺少 image_key",
                 )
 
             if caption:
@@ -2154,7 +2154,7 @@ class FeishuAdapter(BasePlatformAdapter):
                     reply_to=reply_to,
                     metadata=metadata,
                 )
-            return self._finalize_send_result(message_response, "image send failed")
+            return self._finalize_send_result(message_response, "图片发送失败")
         except Exception as exc:
             logger.error("[Feishu] Failed to send image %s: %s", image_path, exc, exc_info=True)
             return SendResult(success=False, error=str(exc))
@@ -2215,7 +2215,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 reply_to=reply_to,
                 metadata=metadata,
             )
-        degraded_caption = f"[GIF downgraded to file]\n{caption}" if caption else "[GIF downgraded to file]"
+        degraded_caption = f"[GIF 已转为文件发送]\n{caption}" if caption else "[GIF 已转为文件发送]"
         return await self.send_document(
             chat_id=chat_id,
             file_path=file_path,
@@ -2244,7 +2244,7 @@ class FeishuAdapter(BasePlatformAdapter):
             response = await asyncio.to_thread(self._client.im.v1.chat.get, request)
             if not response or getattr(response, "success", lambda: False)() is False:
                 code = getattr(response, "code", "unknown")
-                msg = getattr(response, "msg", "chat lookup failed")
+                msg = getattr(response, "msg", "会话查询失败")
                 logger.warning("[Feishu] Failed to get chat info for %s: [%s] %s", chat_id, code, msg)
                 return fallback
 
@@ -3281,7 +3281,7 @@ class FeishuAdapter(BasePlatformAdapter):
         # Rate limiting — composite key: app_id:path:remote_ip (matches openclaw key structure).
         rate_key = f"{self._app_id}:{self._webhook_path}:{remote_ip}"
         if not self._check_webhook_rate_limit(rate_key):
-            logger.warning("[Feishu] Webhook rate limit exceeded for %s", remote_ip)
+            logger.warning("[Feishu] Webhook 频率限制超出: %s", remote_ip)
             self._record_webhook_anomaly(remote_ip, "429")
             return web.Response(status=429, text="Too Many Requests")
 
@@ -3291,14 +3291,14 @@ class FeishuAdapter(BasePlatformAdapter):
         if content_type and content_type != "application/json":
             logger.warning("[Feishu] Webhook rejected: unexpected Content-Type %r from %s", content_type, remote_ip)
             self._record_webhook_anomaly(remote_ip, "415")
-            return web.Response(status=415, text="Unsupported Media Type")
+            return web.Response(status=415, text="不支持的媒体类型")
 
         # Body size guard — reject early via Content-Length when present.
         content_length = getattr(request, "content_length", None)
         if content_length is not None and content_length > _FEISHU_WEBHOOK_MAX_BODY_BYTES:
             logger.warning("[Feishu] Webhook body too large (%d bytes) from %s", content_length, remote_ip)
             self._record_webhook_anomaly(remote_ip, "413")
-            return web.Response(status=413, text="Request body too large")
+            return web.Response(status=413, text="请求体过大")
 
         try:
             body_bytes: bytes = await asyncio.wait_for(
@@ -3308,7 +3308,7 @@ class FeishuAdapter(BasePlatformAdapter):
         except asyncio.TimeoutError:
             logger.warning("[Feishu] Webhook body read timed out after %ds from %s", _FEISHU_WEBHOOK_BODY_TIMEOUT_SECONDS, remote_ip)
             self._record_webhook_anomaly(remote_ip, "408")
-            return web.Response(status=408, text="Request Timeout")
+            return web.Response(status=408, text="请求超时")
         except Exception:
             self._record_webhook_anomaly(remote_ip, "400")
             return web.json_response({"code": 400, "msg": "failed to read body"}, status=400)
@@ -3316,13 +3316,13 @@ class FeishuAdapter(BasePlatformAdapter):
         if len(body_bytes) > _FEISHU_WEBHOOK_MAX_BODY_BYTES:
             logger.warning("[Feishu] Webhook body exceeds limit (%d bytes) from %s", len(body_bytes), remote_ip)
             self._record_webhook_anomaly(remote_ip, "413")
-            return web.Response(status=413, text="Request body too large")
+            return web.Response(status=413, text="请求体过大")
 
         try:
             payload = json.loads(body_bytes.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             self._record_webhook_anomaly(remote_ip, "400")
-            return web.json_response({"code": 400, "msg": "invalid json"}, status=400)
+            return web.json_response({"code": 400, "msg": "无效的 JSON"}, status=400)
 
         # Verification token check — second layer of defence beyond signature (matches openclaw).
         if self._verification_token:
@@ -3344,12 +3344,12 @@ class FeishuAdapter(BasePlatformAdapter):
         if self._encrypt_key and not self._is_webhook_signature_valid(request.headers, body_bytes):
             logger.warning("[Feishu] Webhook rejected: invalid signature from %s", remote_ip)
             self._record_webhook_anomaly(remote_ip, "401-sig")
-            return web.Response(status=401, text="Invalid signature")
+            return web.Response(status=401, text="无效签名")
 
         if payload.get("encrypt"):
             logger.error("[Feishu] Encrypted webhook payloads are not supported by Hermes webhook mode")
             self._record_webhook_anomaly(remote_ip, "400-encrypted")
-            return web.json_response({"code": 400, "msg": "encrypted webhook payloads are not supported"}, status=400)
+            return web.json_response({"code": 400, "msg": "加密 webhook 载荷不受支持"}, status=400)
 
         self._clear_webhook_anomaly(remote_ip)
 
@@ -3563,10 +3563,15 @@ class FeishuAdapter(BasePlatformAdapter):
             mentions=getattr(message, "mentions", None),
             bot=self._bot_identity(),
         )
-        media_urls, media_types = await self._download_feishu_message_resources(
+        media_result = await self._download_feishu_message_resources(
             message_id=message_id,
             normalized=normalized,
         )
+        if len(media_result) == 2:
+            media_urls, media_types = media_result
+            download_notices = []
+        else:
+            media_urls, media_types, download_notices = media_result
         inbound_type = self._resolve_normalized_message_type(normalized, media_types)
         text = normalized.text_content
 
@@ -3579,6 +3584,9 @@ class FeishuAdapter(BasePlatformAdapter):
             if injected:
                 text = injected
 
+        if download_notices:
+            text = "\n".join(part for part in [text, *download_notices] if part)
+
         return text, inbound_type, media_urls, media_types, list(normalized.mentions)
 
     async def _download_feishu_message_resources(
@@ -3586,9 +3594,10 @@ class FeishuAdapter(BasePlatformAdapter):
         *,
         message_id: str,
         normalized: FeishuNormalizedMessage,
-    ) -> tuple[List[str], List[str]]:
+    ) -> tuple[List[str], List[str], List[str]]:
         media_urls: List[str] = []
         media_types: List[str] = []
+        download_notices: List[str] = []
 
         for image_key in normalized.image_keys:
             cached_path, media_type = await self._download_feishu_image(
@@ -3598,6 +3607,10 @@ class FeishuAdapter(BasePlatformAdapter):
             if cached_path:
                 media_urls.append(cached_path)
                 media_types.append(media_type)
+            else:
+                download_notices.append(
+                    "[图片下载失败，可能已过期、权限不足、文件过大或类型不支持]"
+                )
 
         for media_ref in normalized.media_refs:
             cached_path, media_type = await self._download_feishu_message_resource(
@@ -3609,8 +3622,13 @@ class FeishuAdapter(BasePlatformAdapter):
             if cached_path:
                 media_urls.append(cached_path)
                 media_types.append(media_type)
+            else:
+                label = media_ref.file_name or media_ref.resource_type or "附件"
+                download_notices.append(
+                    f"[文件下载失败: {label}，可能已过期、权限不足、文件过大或类型不支持]"
+                )
 
-        return media_urls, media_types
+        return media_urls, media_types, download_notices
 
     @staticmethod
     def _resolve_media_message_type(media_type: str, *, default: MessageType) -> MessageType:
@@ -3983,7 +4001,7 @@ class FeishuAdapter(BasePlatformAdapter):
             response = await asyncio.to_thread(self._client.im.v1.message.get, request)
             if not response or getattr(response, "success", lambda: False)() is False:
                 code = getattr(response, "code", "unknown")
-                msg = getattr(response, "msg", "message lookup failed")
+                msg = getattr(response, "msg", "消息查询失败")
                 logger.warning("[Feishu] Failed to fetch parent message %s: [%s] %s", message_id, code, msg)
                 return None
             items = getattr(getattr(response, "data", None), "items", None) or []
@@ -4347,9 +4365,9 @@ class FeishuAdapter(BasePlatformAdapter):
         outbound_message_type: str = "file",
     ) -> SendResult:
         if not self._client:
-            return SendResult(success=False, error="Not connected")
+            return SendResult(success=False, error="未连接")
         if not os.path.exists(file_path):
-            return SendResult(success=False, error=f"File not found: {file_path}")
+            return SendResult(success=False, error=f"文件不存在: {file_path}")
 
         display_name = file_name or os.path.basename(file_path)
         upload_file_type, resolved_message_type = self._resolve_outbound_file_routing(
@@ -4369,8 +4387,8 @@ class FeishuAdapter(BasePlatformAdapter):
             if not file_key:
                 return self._response_error_result(
                     upload_response,
-                    default_message="file upload failed",
-                    override_error="Feishu file upload missing file_key",
+                    default_message="文件上传失败",
+                    override_error="飞书文件上传缺少 file_key",
                 )
 
             if caption:
@@ -4394,7 +4412,7 @@ class FeishuAdapter(BasePlatformAdapter):
                     reply_to=reply_to,
                     metadata=metadata,
                 )
-            return self._finalize_send_result(message_response, "file send failed")
+            return self._finalize_send_result(message_response, "文件发送失败")
         except Exception as exc:
             logger.error("[Feishu] Failed to send file %s: %s", file_path, exc, exc_info=True)
             return SendResult(success=False, error=str(exc))
@@ -4632,7 +4650,7 @@ class FeishuAdapter(BasePlatformAdapter):
                     exc,
                 )
                 await asyncio.sleep(wait_seconds)
-        raise last_error or RuntimeError("Feishu send failed")
+        raise last_error or RuntimeError("飞书发送失败")
 
     async def _release_app_lock(self) -> None:
         if not self._app_lock_identity:

@@ -218,7 +218,7 @@ def resolve_rule(
 
 
 # ---------------------------------------------------------------------------
-# Pairing store
+# 配对存储
 # ---------------------------------------------------------------------------
 
 def _load_pairing_approved() -> set:
@@ -297,18 +297,18 @@ def is_user_allowed(rule: ResolvedCommentRule, user_open_id: str) -> bool:
 
 def _print_status() -> None:
     cfg = load_config()
-    print(f"Rules file: {RULES_FILE}")
+    print(f"规则文件: {RULES_FILE}")
     print(f"  exists: {RULES_FILE.exists()}")
     print(f"Pairing file: {PAIRING_FILE}")
     print(f"  exists: {PAIRING_FILE.exists()}")
     print()
-    print(f"Top-level:")
+    print("顶层配置:")
     print(f"  enabled:    {cfg.enabled}")
     print(f"  policy:     {cfg.policy}")
     print(f"  allow_from: {sorted(cfg.allow_from) if cfg.allow_from else '[]'}")
     print()
     if cfg.documents:
-        print(f"Document rules ({len(cfg.documents)}):")
+        print(f"文档规则 ({len(cfg.documents)}):")
         for key, rule in sorted(cfg.documents.items()):
             parts = []
             if rule.enabled is not None:
@@ -319,10 +319,10 @@ def _print_status() -> None:
                 parts.append(f"allow_from={sorted(rule.allow_from)}")
             print(f"  [{key}] {', '.join(parts) if parts else '(empty — inherits all)'}")
     else:
-        print("Document rules: (none)")
+        print("文档规则: 无")
     print()
     approved = pairing_list()
-    print(f"Pairing approved ({len(approved)}):")
+    print(f"已配对用户 ({len(approved)}):")
     for uid, meta in sorted(approved.items()):
         ts = meta.get("approved_at", 0)
         print(f"  {uid}  (approved_at={ts})")
@@ -332,19 +332,19 @@ def _do_check(doc_key: str, user_open_id: str) -> None:
     cfg = load_config()
     parts = doc_key.split(":", 1)
     if len(parts) != 2:
-        print(f"Error: doc_key must be 'fileType:fileToken', got '{doc_key}'")
+        print(f"错误: doc_key 必须是 'fileType:fileToken'，当前是 '{doc_key}'")
         return
     file_type, file_token = parts
     rule = resolve_rule(cfg, file_type, file_token)
     allowed = is_user_allowed(rule, user_open_id)
-    print(f"Document:     {doc_key}")
-    print(f"User:         {user_open_id}")
-    print(f"Resolved rule:")
-    print(f"  enabled:      {rule.enabled}")
-    print(f"  policy:       {rule.policy}")
+    print(f"文档:       {doc_key}")
+    print(f"用户:       {user_open_id}")
+    print(f"命中规则:")
+    print(f"  启用:       {rule.enabled}")
+    print(f"  策略:       {rule.policy}")
     print(f"  allow_from:   {sorted(rule.allow_from) if rule.allow_from else '[]'}")
     print(f"  match_source: {rule.match_source}")
-    print(f"Result:       {'ALLOWED' if allowed else 'DENIED'}")
+    print(f"结果:       {'允许' if allowed else '拒绝'}")
 
 
 def _main() -> int:
@@ -383,21 +383,21 @@ def _main() -> int:
 
     elif cmd == "check":
         if len(args) < 3:
-            print("Usage: check <fileType:fileToken> <user_open_id>")
+            print("用法: check <fileType:fileToken> <user_open_id>")
             return 1
         _do_check(args[1], args[2])
 
     elif cmd == "pairing":
         if len(args) < 2:
-            print("Usage: pairing <add|remove|list> [args]")
+            print("用法: pairing <add|remove|list> [args]")
             return 1
         sub = args[1]
         if sub == "add":
             if len(args) < 3:
-                print("Usage: pairing add <user_open_id>")
+                print("用法: pairing add <user_open_id>")
                 return 1
             if pairing_add(args[2]):
-                print(f"Added: {args[2]}")
+                print(f"已添加: {args[2]}")
             else:
                 print(f"Already approved: {args[2]}")
         elif sub == "remove":
@@ -405,7 +405,7 @@ def _main() -> int:
                 print("Usage: pairing remove <user_open_id>")
                 return 1
             if pairing_remove(args[2]):
-                print(f"Removed: {args[2]}")
+                print(f"已移除: {args[2]}")
             else:
                 print(f"Not in approved list: {args[2]}")
         elif sub == "list":
@@ -418,7 +418,7 @@ def _main() -> int:
             print(f"Unknown pairing subcommand: {sub}")
             return 1
     else:
-        print(f"Unknown command: {cmd}\n")
+        print(f"未知命令: {cmd}\n")
         print(usage)
         return 1
     return 0

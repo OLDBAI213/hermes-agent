@@ -156,7 +156,7 @@ class TestFeishuMessageNormalization(unittest.TestCase):
         self.assertEqual(normalized.relation_kind, "interactive")
         self.assertEqual(
             normalized.text_content,
-            "Build Failed\nService: payments-api\nBranch: main\nView Logs\nRetry\nActions: View Logs, Retry",
+            "Build Failed\nService: payments-api\nBranch: main\nView Logs\nRetry\n操作：View Logs, Retry",
         )
 
 
